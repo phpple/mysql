@@ -1,0 +1,23 @@
+{
+  "name": "phpple/mysql",
+  "description": "a easy mysql framework",
+  "type": "library",
+  "require-dev": {
+    "phpunit/phpunit": "^6"
+  },
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "ronnie",
+      "email": "comdeng@live.com"
+    }
+  ],
+  "minimum-stability": "stable",
+  "require": {},
+  "autoload": {
+    "psr-4": {
+      "Phpple\\Mysql\\": "src/",
+      "Phpple\\Mysql\\Test\\": "test"
+    }
+  }
+}
