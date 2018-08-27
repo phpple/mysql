@@ -40,10 +40,10 @@ class Compiler
         self::SHOW_CREATE_TABLE => 'SHOW CREATE TABLE `{DB}`.`{TABLE}`',
         self::EXPLAIN => 'EXPLAIN {SQL}',
         self::SHOW => 'SHOW {SQL}',
-        self::INSERT => 'INSERT INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
-        self::INSERT_IGNORE => 'INSERT IGNORE INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
-        self::INSERT_UPDATE => 'INSERT INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
-        self::UPDATE => 'UPDATE `{DB}`.`{TABLE}` SET {UPDATES} {WHERE}',
+        self::INSERT => 'INSERT INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES})',
+        self::INSERT_IGNORE => 'INSERT IGNORE INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES})',
+        self::INSERT_UPDATE => 'INSERT INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
+        self::UPDATE => 'UPDATE `{DB}`.`{TABLE}` SET {UPDATES}{WHERE}',
         self::UPDATE_CASE => 'UPDATE `{DB}`.`{TABLE}` 
 SET {FIELD}=CASE {PRIKEY}
 {CASES}

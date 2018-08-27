@@ -14,6 +14,10 @@ use Phpple\Mysql\Sql\Template\Compiler;
 class SqlBuilder
 {
     const ALL_FIELDS_FLAG = '*';
+    /**
+     * 使用此标识的字段，不对内容进行escapeVar操作
+     */
+    const RAW_VALUE_FLAG = '@';
 
     private $db;
     private $table;
@@ -50,6 +54,16 @@ class SqlBuilder
      * @var string 操作
      */
     private $operation = Compiler::SELECT;
+
+    /**
+     * @var array 需要更新的数据
+     */
+    private $data = [];
+
+    /**
+     * @var array 设置哪些是需要保存的数据
+     */
+    private $dataFields = [];
 
 
     /**
@@ -94,6 +108,7 @@ class SqlBuilder
      */
     public function fields(...$fields)
     {
+        $this->fields = [];
         foreach ($fields as $field) {
             $this->fields[] = $this->wrapperField($field);
         }
@@ -109,7 +124,7 @@ class SqlBuilder
         if (empty($this->fields)) {
             return self::ALL_FIELDS_FLAG;
         }
-        return implode(',', $this->fields);
+        return implode(', ', $this->fields);
     }
 
     /**
@@ -217,7 +232,7 @@ class SqlBuilder
                 $sqls[] = $this->buildParamWhere($c, $cause);
             }
         }
-        return '(' . implode(ISqlWhere::LOGIC_AND, $sqls) . ')';
+        return '(' . implode(' ' . ISqlWhere::LOGIC_AND . ' ', $sqls) . ')';
     }
 
     /**
@@ -232,7 +247,7 @@ class SqlBuilder
             case is_int($orig):
                 return $orig;
             case is_string($orig):
-                return 'unhex(' . bin2hex($orig) . ')';
+                return '0x' . bin2hex($orig);
             case is_numeric($orig):
                 if (0 == $orig) {
                     return "'0'";
@@ -250,15 +265,11 @@ class SqlBuilder
                 foreach ($orig as $v) {
                     $arr[] = $this->escapeVal($v, $level + 1);
                 }
-                return implode('.', $arr);
+                return implode(', ', $arr);
             default:
                 throw new \InvalidArgumentException('not support type');
 
         }
-        if (is_numeric($orig)) {
-            return $orig;
-        }
-        return 'unhex(' . bin2hex($orig) . ')';
     }
 
     /**
@@ -291,6 +302,89 @@ class SqlBuilder
         }
         return ' WHERE ' . implode(' ', array_slice($this->causes, 1));
     }
+
+    /**
+     * 设置保存哪些数据
+     * @param array $data
+     * @param null|array $fields 需要保存的字段是哪些
+     * @return $this
+     */
+    public function setData(array $data, $fields = null)
+    {
+        $this->dataFields = $fields;
+        if ($fields !== null) {
+            $body = [];
+            foreach ($fields as $key) {
+                if (!array_key_exists($data, $key)) {
+                    throw new \InvalidArgumentException('data key required:' . $key);
+                } else {
+                    $body[$key] = $data[$key];
+                }
+            }
+            $this->data = $body;
+        } else {
+            $this->data = $data;
+            $this->dataFields = array_keys($data);
+        }
+        return $this;
+    }
+
+    /**
+     * 获取要更新的字段
+     * @return string
+     */
+    public function getKeysSql()
+    {
+        $keys = [];
+        foreach ($this->dataFields as $key) {
+            if ($key[0] == self::RAW_VALUE_FLAG) {
+                $keys[] = $this->wrapperField(substr($key, 1));
+            } else {
+                $keys[] = $this->wrapperField($key);
+            }
+        }
+        return implode(', ', $keys);
+    }
+
+    /**
+     * 获取要插入的数据
+     */
+    public function getValuesSql()
+    {
+        if (empty($this->data)) {
+            return '';
+        }
+        $values = [];
+        foreach ($this->dataFields as $field) {
+            $value = $this->data[$field];
+            if ($field[0] == self::RAW_VALUE_FLAG) {
+                $values[] = $value;
+            } else {
+                $values[] = $this->escapeVal($this->data);
+            }
+        }
+        return implode(', ', $values);
+    }
+
+    /**
+     * 获取update的更新语句
+     */
+    public function getUpdatesSql()
+    {
+        if (empty($this->data)) {
+            return '';
+        }
+        $kvs = [];
+        foreach ($this->dataFields as $field) {
+            if ($field[0] == self::RAW_VALUE_FLAG) {
+                $kvs[] = sprintf('%s = %s', $this->wrapperField(substr($field, 1)), $this->data[$field]);
+            } else {
+                $kvs[] = sprintf('%s = %s', $this->wrapperField($field), $this->escapeVal($this->data[$field]));
+            }
+        }
+        return implode(', ', $kvs);
+    }
+
 
     /**
      * 限制获取多少条数据
@@ -375,7 +469,7 @@ class SqlBuilder
             }
             $sqls[] = sprintf('%s %s', $order[0], $order[1] ? 'ASC' : 'DESC');
         }
-        return ' ORDER BY ' . implode(',', $sqls);
+        return ' ORDER BY ' . implode(', ', $sqls);
     }
 
     /**
@@ -401,7 +495,7 @@ class SqlBuilder
         if (!$this->groups) {
             return '';
         }
-        return ' GROUP BY ' . implode(',', $this->groups);
+        return ' GROUP BY ' . implode(', ', $this->groups);
     }
 
     /**
@@ -559,6 +653,12 @@ class SqlBuilder
                 return $this->getOrderSql();
             case 'GROUP':
                 return $this->getGroupSql();
+            case 'KEYS':
+                return $this->getKeysSql();
+            case 'VALUES':
+                return $this->getValuesSql();
+            case 'UPDATES':
+                return $this->getUpdatesSql();
             case 'JOIN':
                 return '';
             default:
@@ -573,5 +673,14 @@ class SqlBuilder
     public function toString()
     {
         return Compiler::compile($this->operation, [$this, 'generateTplVar']);
+    }
+
+    /**
+     * 序列化输出字符
+     * @return string
+     */
+    public function __toString()
+    {
+        return $this->toString();
     }
 }

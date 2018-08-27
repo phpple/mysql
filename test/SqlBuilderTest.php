@@ -28,7 +28,7 @@ class SqlBuilderTest extends TestCase
             ->limitOne()
             ->select();
         $this->assertEquals(
-            'SELECT `user_id`,`username`,`email` FROM `user`.`u_user` WHERE (`user_id` = 234) AND (`status` != -1) ORDER BY `user_id` ASC,`username` DESC LIMIT 0,1',
+            'SELECT `user_id`,`username`,`email` FROM `phpple`.`u_user` WHERE (`user_id` = 234) AND (`status` != -1) ORDER BY `user_id` ASC,`username` DESC LIMIT 0,1',
             $sqlBuilder->toString()
         );
         echo $sqlBuilder->toString();
@@ -44,11 +44,12 @@ class SqlBuilderTest extends TestCase
             ->groupBy('city_id')
             ->select();
         $this->assertEquals(
-            'SELECT `city_id`,count(0) FROM `user`.`u_user` WHERE (`status` != -1) GROUP BY `city_id`',
+            'SELECT `city_id`,count(0) FROM `phpple`.`u_user` WHERE (`status` != -1) GROUP BY `city_id`',
             $sqlBuilder->toString()
         );
         echo $sqlBuilder->toString();
     }
+
 
     public function testSelectForUpdate()
     {
@@ -58,7 +59,29 @@ class SqlBuilderTest extends TestCase
             ->where('user_id', 10000)
             ->select(true);
         $this->assertEquals(
-            'SELECT * FROM `user`.`u_user` WHERE (`user_id` = 10000) FOR UPDATE',
+            'SELECT * FROM `phpple`.`u_user` WHERE (`user_id` = 10000) FOR UPDATE',
+            $sqlBuilder->toString()
+        );
+        echo $sqlBuilder->toString();
+    }
+
+    public function testCount()
+    {
+        $sqlBuilder = new SqlBuilder();
+        $sqlBuilder->db('phpple')
+            ->table('u_user')
+            ->fields('id')
+            ->where('city_id', 110900)
+            ->select();
+        $this->assertEquals(
+            'SELECT `id` FROM `phpple`.`u_user` WHERE (`city_id` = 110900)',
+            $sqlBuilder->toString()
+        );
+        echo $sqlBuilder->toString().PHP_EOL;
+
+        $sqlBuilder->count();
+        $this->assertEquals(
+            'SELECT COUNT(0) CNT FROM `phpple`.`u_user` WHERE (`city_id` = 110900)',
             $sqlBuilder->toString()
         );
         echo $sqlBuilder->toString();
@@ -72,36 +95,76 @@ class SqlBuilderTest extends TestCase
             $sqlBuilder->toString()
         );
 
-        $sqlBuilder = SqlBuilder::descTable('user', 'u_user');
+        $sqlBuilder = SqlBuilder::descTable('phpple', 'u_user');
         $this->assertEquals(
-            'DESC `user`.`u_user`',
+            'DESC `phpple`.`u_user`',
             $sqlBuilder->toString()
         );
 
         $sqlBuilder = SqlBuilder::showCreateTable('user', 'u_user');
         $this->assertEquals(
-            'SHOW CREATE TABLE `user`.`u_user`',
+            'SHOW CREATE TABLE `phpple`.`u_user`',
             $sqlBuilder->toString()
         );
     }
 
-    public function testDelete()
+    public function testInsert()
     {
+        $data = [
+            'id' => 10001,
+            'username' => 'comdeng',
+            'password' => md5('test'),
+            'avatar' => '/m/sdfsd/sdfsd.jpg',
+            'sex' => 2,
+            'create_time' => date('Y/m/d H:i:s'),
+        ];
         $sqlBuilder = new SqlBuilder();
-        $sqlBuilder->db('user')
+        $sqlBuilder->db('phpple')
             ->table('u_user')
-            ->where('user_id', 4)
-            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
-            ->delete();
+            ->setData($data)
+            ->insert();
         $this->assertEquals(
-            'DELETE FROM `user`.`u_user` WHERE (`user_id` = 4) AND (`status` != -1)',
+            'INSERT INTO `phpple`.`u_user`(`id`, `username`, `password`, `avatar`, `sex`, `create_time`) VALUES(10001, 0x' .
+            bin2hex($data['username']) . ', 0x' .
+            bin2hex($data['password']) . ', 0x' .
+            bin2hex($data['avatar']) . ', ' . $data['sex'] . ', 0x' .
+            bin2hex($data['create_time']) . ')',
             $sqlBuilder->toString()
         );
         echo $sqlBuilder->toString();
     }
 
-    public function testInsert()
+    public function testUpdate()
     {
+        $data = [
+            'email' => 'comdeng@live.com',
+            '@update_time' => 'CURRENT_TIMESTAMP()',
+        ];
+        $sqlBuilder = new SqlBuilder();
+        $sqlBuilder->db('phpple')
+            ->table('u_user')
+            ->setData($data)
+            ->where('id', 10000)
+            ->update();
+        $this->assertEquals(
+            'UPDATE `phpple`.`u_user` SET `email` = 0x' . bin2hex($data['email']) . ', `update_time` = ' . $data['@update_time'] . ' WHERE (`id` = 10000)',
+            $sqlBuilder->toString()
+        );
+        echo $sqlBuilder->toString();
+    }
 
+    public function testDelete()
+    {
+        $sqlBuilder = new SqlBuilder();
+        $sqlBuilder->db('phpple')
+            ->table('u_user')
+            ->where('user_id', 4)
+            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
+            ->delete();
+        $this->assertEquals(
+            'DELETE FROM `phpple`.`u_user` WHERE (`user_id` = 4) AND (`status` != -1)',
+            $sqlBuilder->toString()
+        );
+        echo $sqlBuilder->toString();
     }
 }
