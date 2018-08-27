@@ -32,45 +32,25 @@ class SqlBuilder
     private $causes = [];
 
     /**
-     * @var string where语句的模板
-     */
-    private $whereTpl = '';
-
-    /**
      * @var array 限制条件
      */
     private $limit = [];
 
     /**
-     * @var string 按什么排序
+     * @var string[] 按什么排序
      */
-    private $sort;
+    private $orders = [];
+
+    /**
+     * @var string[] 按什么分组
+     */
+    private $groups = [];
 
     /**
      * @var string 操作
      */
-    private $operation = ISqlOperation::SELECT;
+    private $operation = Compiler::SELECT;
 
-    /**
-     * @var array sql操作和对应的模板
-     */
-    private static $sqlTemplates = [
-        ISqlOperation::SELECT => 'SELECT {FIELDS} FROM `{DB}`.`{TABLE}`{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT}{FORUPDATE}',
-        ISqlOperation::DESC => 'DESC `{DB}`.`{TABLE}`',
-        ISqlOperation::EXPLAIN => 'EXPLAIN {SQL}',
-        ISqlOperation::SHOW => 'SHOW {SQL}',
-        ISqlOperation::INSERT => 'INSERT INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
-        ISqlOperation::INSERT_IGNORE => 'INSERT IGNORE INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
-        ISqlOperation::INSERT_UPDATE => 'INSERT INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
-        ISqlOperation::UPDATE => 'UPDATE `{DB}`.`{TABLE}` SET {UPDATES} {WHERE}',
-        ISqlOperation::UPDATE_CASE => 'UPDATE `{DB}`.`{TABLE}` 
-SET {FIELD}=CASE {PRIKEY}
-{CASES}
-END
-{WHERE}',
-        ISqlOperation::DELETE => 'DELETE FROM `{DB}`.`{TABLE}` {WHERE}',
-        ISqlOperation::REPLACE => 'REPLACE INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
-    ];
 
     /**
      * 设置db名
@@ -115,7 +95,7 @@ END
     public function fields(...$fields)
     {
         foreach ($fields as $field) {
-            $this->fields[] = '`' . $field . '`';
+            $this->fields[] = $this->wrapperField($field);
         }
         return $this;
     }
@@ -124,7 +104,7 @@ END
      * 获取要查找的字段
      * @return string
      */
-    public function getFields()
+    public function getFieldSql()
     {
         if (empty($this->fields)) {
             return self::ALL_FIELDS_FLAG;
@@ -141,7 +121,8 @@ END
     public function whereIn(string $field, array $items)
     {
         $this->causes[] = ISqlWhere::LOGIC_AND;
-        $this->causes[] = "(`{$field}` " . ISqlWhere::RANGE_IN . " (" . $this->escapeVal($items) . "))'";
+        $this->causes[] = sprintf('%s %s ()', $this->wrapperField($field), ISqlWhere::RANGE_IN,
+            $this->escapeVal($items));
         return $this;
     }
 
@@ -156,7 +137,8 @@ END
     public function where(string $field, $value, string $compare = ISqlWhere::COMPARE_EQUAL, bool $escape = true)
     {
         $this->causes[] = ISqlWhere::LOGIC_AND;
-        $this->causes[] = sprintf('(`%s` %s %s)', $field, $compare, $escape ? $this->escapeVal($value) : $value);
+        $this->causes[] = sprintf('(%s %s %s)', $this->wrapperField($field), $compare,
+            $escape ? $this->escapeVal($value) : $value);
         return $this;
     }
 
@@ -279,12 +261,30 @@ END
         return 'unhex(' . bin2hex($orig) . ')';
     }
 
+    /**
+     * 将字段进行包装
+     * @param string $fieldStr
+     * @return string
+     * @TODO 需要进一步完善
+     */
+    public function wrapperField($fieldStr)
+    {
+        if (!$fieldStr || is_int($fieldStr)) {
+            return $fieldStr;
+        }
+        $pos1 = strpos($fieldStr, '.');
+        $pos2 = strpos($fieldStr, '(');
+        if ($pos1 === false && $pos2 === false) {
+            return '`' . $fieldStr . '`';
+        }
+        return $fieldStr;
+    }
 
     /**
      * 获取查询条件
      * @return string
      */
-    private function getWhere()
+    private function getWhereSql()
     {
         if (count($this->causes) == 0) {
             return '';
@@ -293,12 +293,187 @@ END
     }
 
     /**
+     * 限制获取多少条数据
+     * @param int $num 多少条数据
+     * @param int $offset 偏移量
+     * @return $this
+     */
+    public function limit(int $offset, int $num)
+    {
+        $this->limit = [$offset, $num];
+        return $this;
+    }
+
+    /**
+     * 限制获取一条数据
+     * @return $this
+     */
+    public function limitOne()
+    {
+        return $this->limit(0, 1);
+    }
+
+    /**
+     * 限制获取最前面的多少条数据
+     * @param int $num
+     * @return $this
+     */
+    public function limitFirst(int $num)
+    {
+        return $this->limit(0, $num);
+    }
+
+    /**
+     * 获取limit的查询sql
+     */
+    public function getLimitSql()
+    {
+        if (!$this->limit) {
+            return '';
+        }
+        return sprintf(' LIMIT %d,%d', $this->limit[0], $this->limit[1]);
+    }
+
+    /**
+     * 以什么字段排序
+     * 可以多次调用
+     * @param string $field 如果传入null，表示不进行任何排序，最后相当于order by null
+     * @param bool $asc
+     * @throws \InvalidArgumentException field sorted 字段不能被重复排序
+     * @throws \InvalidArgumentException order by null defined 已经定义过order by null
+     * @return $this
+     */
+    public function orderBy($field, bool $asc = true)
+    {
+        $field = $field === null ? $field : $this->wrapperField($field);
+        foreach ($this->orders as $o) {
+            if ($o[0] === null) {
+                throw new \InvalidArgumentException('order by null defined');
+            }
+            if ($o[0] == $field) {
+                throw new \InvalidArgumentException('field sorted');
+            }
+        }
+        $this->orders[] = [$field === null ? 'NULL' : $field, $asc];
+        return $this;
+    }
+
+    /**
+     * 获取排序的sql
+     * @return string
+     */
+    public function getOrderSql()
+    {
+        if (empty($this->orders)) {
+            return '';
+        }
+        $sqls = [];
+        foreach ($this->orders as $order) {
+            if ($order[0] === 'NULL') {
+                $sqls[] = 'NULL';
+                continue;
+            }
+            $sqls[] = sprintf('%s %s', $order[0], $order[1] ? 'ASC' : 'DESC');
+        }
+        return ' ORDER BY ' . implode(',', $sqls);
+    }
+
+    /**
+     * 基于哪个字段分组
+     * @param $fields
+     * @return $this
+     */
+    public function groupBy(...$fields)
+    {
+        foreach ($fields as $key => $field) {
+            $fields[$key] = $this->wrapperField($field);
+        }
+        $this->groups = $fields;
+        return $this;
+    }
+
+    /**
+     * 获取分组的sql
+     * @return string
+     */
+    public function getGroupSql()
+    {
+        if (!$this->groups) {
+            return '';
+        }
+        return ' GROUP BY ' . implode(',', $this->groups);
+    }
+
+    /**
      * 设定操作为select
+     * @param bool $forUpdate 是否锁定等待更新
      * @return SqlBuilder
      */
-    public function select()
+    public function select(bool $forUpdate = false)
     {
-        return $this->operation(ISqlOperation::SELECT);
+        if ($forUpdate) {
+            return $this->operation(Compiler::SELECT_FOR_UPDATE);
+        }
+        return $this->operation(Compiler::SELECT);
+    }
+
+    /**
+     * 获取数量
+     * @param string $countField
+     * @return $this
+     */
+    public function count($countField = 'CNT')
+    {
+        $this->fields = ['COUNT(0) ' . $countField];
+        $this->select();
+    }
+
+    /**
+     * 获取是否存在
+     * @param string $existVal 如果存在时返回的字段值为多少
+     * @return $this
+     */
+    public function exist($existVal = 1)
+    {
+        $this->fields = [$existVal];
+        $this->select();
+    }
+
+    /**
+     * 获取最后插入id的SqlBuilder
+     * @return SqlBuilder
+     */
+    public static function lastInsertId()
+    {
+        return (new SqlBuilder())->operation(Compiler::SELECT_LAST_INSERT_ID);
+    }
+
+    /**
+     * 描述一个表的结构
+     * @param $db
+     * @param $table
+     * @return SqlBuilder
+     */
+    public static function descTable($db, $table)
+    {
+        return (new SqlBuilder())
+            ->db($db)
+            ->table($table)
+            ->operation(Compiler::DESC_TABLE);
+    }
+
+    /**
+     * 获取创建表的语句
+     * @param $db
+     * @param $table
+     * @return SqlBuilder
+     */
+    public static function showCreateTable($db, $table)
+    {
+        return (new SqlBuilder())
+            ->db($db)
+            ->table($table)
+            ->operation(Compiler::SHOW_CREATE_TABLE);
     }
 
     /**
@@ -307,7 +482,7 @@ END
      */
     public function update()
     {
-        return $this->operation(ISqlOperation::UPDATE);
+        return $this->operation(Compiler::UPDATE);
     }
 
     /**
@@ -316,7 +491,7 @@ END
      */
     public function delete()
     {
-        return $this->operation(ISqlOperation::DELETE);
+        return $this->operation(Compiler::DELETE);
     }
 
     /**
@@ -325,7 +500,7 @@ END
      */
     public function insert()
     {
-        return $this->operation(ISqlOperation::INSERT);
+        return $this->operation(Compiler::INSERT);
     }
 
     /**
@@ -334,7 +509,7 @@ END
      */
     public function insertIgnore()
     {
-        return $this->operation(ISqlOperation::INSERT_IGNORE);
+        return $this->operation(Compiler::INSERT_IGNORE);
     }
 
     /**
@@ -343,18 +518,18 @@ END
      */
     public function insertUpdate()
     {
-        return $this->operation(ISqlOperation::INSERT_UPDATE);
+        return $this->operation(Compiler::INSERT_UPDATE);
     }
 
     /**
      * 设置操作为select
-     * @param int $operation
+     * @param string $operation
      * @return $this
      * @throws \InvalidArgumentException 错误的类型
      */
-    public function operation(int $operation)
+    public function operation(string $operation)
     {
-        if (!isset(self::$sqlTemplates[$operation])) {
+        if (!Compiler::validKey($operation)) {
             throw new \InvalidArgumentException("illegal operation");
         }
         $this->operation = $operation;
@@ -364,28 +539,39 @@ END
     /**
      * 生成模板变量
      * @param $name
+     * @throws \InvalidArgumentException 变量尚未实现
+     * @return string
      */
     public function generateTplVar($name)
     {
         switch ($name) {
             case 'DB':
                 return $this->db;
-                break;
             case 'TABLE':
                 return $this->table;
             case 'FIELDS':
-                return $this->getFields();
+                return $this->getFieldSql();
             case 'WHERE':
-                return $this->getWhere();
+                return $this->getWhereSql();
+            case 'LIMIT':
+                return $this->getLimitSql();
+            case 'ORDER':
+                return $this->getOrderSql();
+            case 'GROUP':
+                return $this->getGroupSql();
+            case 'JOIN':
+                return '';
+            default:
+                throw new \InvalidArgumentException('var not implemented:' . $name);
         }
     }
 
     /**
      * 将sql对象转化为字符串
+     * @return string
      */
-    public function __toString()
+    public function toString()
     {
-        $template = self::$sqlTemplates[$this->operation];
-        return Compiler::compile($template, array($this, 'generateTplVar'));
+        return Compiler::compile($this->operation, [$this, 'generateTplVar']);
     }
 }
