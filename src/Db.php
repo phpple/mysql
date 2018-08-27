@@ -87,8 +87,9 @@ class Db
 
         $mysqli = $this->getMysqli($conf);
         $ret = $mysqli->query($sql);
+        error_log('sql:' . $sql, 4);
         if ($ret === false) {
-            throw new \UnexpectedValueException($mysqli->error);
+            throw new \RuntimeException($mysqli->error);
         }
         return $ret;
     }
@@ -113,6 +114,7 @@ class Db
     /**
      * 获取全部记录
      * 使用yield获取每一行的值
+     * @return \Generator
      * @example
      * ```
      * foreach($db->fetchAll() as $row) {
@@ -120,7 +122,7 @@ class Db
      * }
      * ```
      */
-    public function getAll()
+    public function fetchAll()
     {
         $sql = $this->sqlBuilder->toString();
         $rs = $this->realQuery($sql);
@@ -128,6 +130,20 @@ class Db
             yield $row;
         }
         $rs->close();
+    }
+
+
+    /**
+     * 获取全部记录
+     * @return array
+     */
+    public function getAll()
+    {
+        $sql = $this->sqlBuilder->select()->toString();
+        $rs = $this->realQuery($sql);
+        $rows = $rs->fetch_all(MYSQLI_ASSOC);
+        $rs->close();
+        return $rows;
     }
 
     /**
@@ -189,14 +205,45 @@ class Db
     }
 
     /**
+     * 插入数据
+     * @return int
+     */
+    public function insert()
+    {
+        $this->sqlBuilder->insert();
+        return $this->execute();
+    }
+
+    /**
+     * 更新
+     * @return int
+     */
+    public function update()
+    {
+        $this->sqlBuilder->update();
+        return $this->execute();
+    }
+
+
+    /**
+     * 删除数据
+     * @return mixed
+     */
+    public function delete()
+    {
+        $this->sqlBuilder->delete();
+        return $this->execute();
+    }
+
+    /**
      * 执行DDL操作
      * @return int 影响条数
      */
     public function execute()
     {
         $sql = $this->sqlBuilder->toString();
-        $rs = $this->realQuery($sql, $mysqli);
-        if ($rs !== true) {
+        $ret = $this->realQuery($sql, $mysqli);
+        if ($ret !== true) {
             throw new \InvalidArgumentException('sql is not DDL mode');
         }
         return $mysqli->affected_rows;

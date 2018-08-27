@@ -146,8 +146,12 @@ class SqlBuilder
     public function whereIn(string $field, array $items)
     {
         $this->causes[] = ISqlWhere::LOGIC_AND;
-        $this->causes[] = sprintf('%s %s ()', $this->wrapperField($field), ISqlWhere::RANGE_IN,
-            $this->escapeVal($items));
+        $this->causes[] = sprintf(
+            '%s %s (%s)',
+            $this->wrapperField($field),
+            ISqlWhere::RANGE_IN,
+            $this->escapeVal($items)
+        );
         return $this;
     }
 
@@ -370,7 +374,7 @@ class SqlBuilder
             if ($field[0] == self::RAW_VALUE_FLAG) {
                 $values[] = $value;
             } else {
-                $values[] = $this->escapeVal($this->data);
+                $values[] = $this->escapeVal($this->data[$field]);
             }
         }
         return implode(', ', $values);
@@ -414,7 +418,7 @@ class SqlBuilder
      */
     public function limitOne()
     {
-        return $this->limit(0, 1);
+        return $this->limit(0, 1)->select();
     }
 
     /**
@@ -424,7 +428,7 @@ class SqlBuilder
      */
     public function limitFirst(int $num)
     {
-        return $this->limit(0, $num);
+        return $this->limit(0, $num)->select();
     }
 
     /**
