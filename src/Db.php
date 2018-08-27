@@ -62,15 +62,15 @@ class Db
     }
 
     /**
-     * 设定table，返回一个sqlBuilder
-     * @param $table
-     * @return SqlBuilder
+     * 设置SqlBuilder
+     * @param SqlBuilder $builder
+     * @return Db
      */
-    public function table($table)
+    public function sqlBuilder(SqlBuilder $builder)
     {
-        return $this->sqlBuilder = (new SqlBuilder())
-            ->db($this->dbRealName)
-            ->table($table);
+        $builder->db($this->dbRealName);
+        $this->sqlBuilder = $builder;
+        return $this;
     }
 
     /**

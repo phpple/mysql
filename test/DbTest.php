@@ -12,6 +12,7 @@ namespace Phpple\Mysql\Test;
 use Phpple\Mysql\Conf;
 use Phpple\Mysql\Db;
 use Phpple\Mysql\Sql\ISqlWhere;
+use Phpple\Mysql\Sql\SqlBuilder;
 use PHPUnit\Framework\TestCase;
 
 class DbTest extends TestCase
@@ -38,20 +39,22 @@ class DbTest extends TestCase
     {
         Conf::init($this->confs);
 
-        $db = Db::get('demo');
-        $db->table('u_user')->where('status', 0);
-        $count = $db->getCount();
+        $count = Db::get('demo')
+            ->sqlBuilder(
+                SqlBuilder::withTable('u_user')
+                    ->where('status', 0)
+            )
+            ->getCount();
         $this->assertGreaterThan(0, $count);
     }
 
     public function testSelect()
     {
         Conf::init($this->confs);
-
-        $db = Db::get('demo');
-        $db->table('u_user')
+        $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('id', 'username', 'city_id', 'email', 'phone')
             ->where('id', 10000, ISqlWhere::COMPARE_GREATER_OR_EQUAL);
+        $db = Db::get('demo')->sqlBuilder($sqlBuilder);
         $rows = [];
         foreach ($db->getAll() as $row) {
             if ($row['phone'] != 0) {

@@ -67,6 +67,16 @@ class SqlBuilder
 
 
     /**
+     * SqlBuilder快速初始化
+     * @param $table
+     * @return SqlBuilder
+     */
+    public static function withTable($table)
+    {
+        return (new SqlBuilder())->table($table);
+    }
+
+    /**
      * 设置db名
      * @param string $db
      * @return $this
