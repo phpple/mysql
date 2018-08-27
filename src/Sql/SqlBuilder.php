@@ -520,6 +520,7 @@ class SqlBuilder
     {
         $this->fields = ['COUNT(0) ' . $countField];
         $this->select();
+        return $this;
     }
 
     /**
@@ -531,6 +532,7 @@ class SqlBuilder
     {
         $this->fields = [$existVal];
         $this->select();
+        return $this;
     }
 
     /**
