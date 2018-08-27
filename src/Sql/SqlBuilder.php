@@ -22,6 +22,7 @@ class SqlBuilder
     private $db;
     private $table;
     private $tableAlias;
+
     /**
      * @var array
      */
@@ -65,6 +66,11 @@ class SqlBuilder
      */
     private $dataFields = [];
 
+
+    /**
+     * @var SqlBuilder
+     */
+    private $tail = null;
 
     /**
      * SqlBuilder快速初始化
@@ -683,12 +689,27 @@ class SqlBuilder
     }
 
     /**
+     * 追加一个SqlBuilder
+     * @param SqlBuilder $builder
+     * @return $this;
+     */
+    public function append(SqlBuilder $builder)
+    {
+        $this->tail = $builder;
+        return $this;
+    }
+
+    /**
      * 将sql对象转化为字符串
      * @return string
      */
     public function toString()
     {
-        return Compiler::compile($this->operation, [$this, 'generateTplVar']);
+        $ret = Compiler::compile($this->operation, [$this, 'generateTplVar']);
+        if ($this->tail) {
+            $ret .= ';' . $this->tail->toString();
+        }
+        return $ret;
     }
 
     /**

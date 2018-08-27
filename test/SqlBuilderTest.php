@@ -167,4 +167,19 @@ class SqlBuilderTest extends TestCase
         );
         echo $sqlBuilder->toString();
     }
+
+    public function testAppend()
+    {
+        $data = [
+            'username' => 'comdeng',
+            'password' => md5('test'),
+        ];
+        $sqlBuilder = new SqlBuilder();
+        $sqlBuilder->db('phpple')
+            ->table('u_user')
+            ->setData($data)
+            ->insert()
+            ->append(SqlBuilder::lastInsertId());
+        echo $sqlBuilder->toString();
+    }
 }

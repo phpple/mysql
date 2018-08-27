@@ -10,9 +10,14 @@
 namespace Phpple\Mysql;
 
 use Phpple\Mysql\Sql\SqlBuilder;
+use PHPUnit\Framework\ExpectationFailedException;
 
 class Db
 {
+    const MULTI_SQL_FLAG = ';';
+    const KEY_AFFECT_ROWS = 'affectr_rows';
+    const KEY_FIELDS = 'fields';
+
     /**
      * @var string
      */
@@ -77,21 +82,70 @@ class Db
      * 真正执行sql查询
      * @param string $sql
      * @param \mysqli $mysqli
-     * @return \mysqli_result|true
+     * @return \mysqli_result|true|array 当有多条数据的时候，会返回array，每条sql对应结果格式为['affect_rows' => , 'records' => ]
      */
     private function realQuery(string $sql, &$mysqli = null)
     {
-        $master = preg_match('#^(INSERT|UPDATE|DELETE|DROP|ALTER) #i', $sql) !== false;
+        $sqls = explode(self::MULTI_SQL_FLAG, $sql);
+        $multi = count($sqls) > 1;
+
+        $master = $this->isWrite($sqls);
         $hash = crc32($sql);
         $conf = Conf::loadConf($this->db, $master, $hash);
 
         $mysqli = $this->getMysqli($conf);
-        $ret = $mysqli->query($sql);
-        error_log('sql:' . $sql, 4);
-        if ($ret === false) {
-            throw new \RuntimeException($mysqli->error);
+        if (!$multi) {
+            $ret = $mysqli->query($sql);
+            error_log('sql:' . $sql, 4);
+            if ($ret === false) {
+                throw new \RuntimeException($mysqli->error);
+            }
+            return $ret;
         }
-        return $ret;
+
+        $ret = @$mysqli->multi_query($sql);
+        if (!$ret) {
+            throw new \RuntimeException('db.QueryError ' . $mysqli->error);
+        }
+        $results = [];
+        do {
+            if ($mysqli->field_count) {
+                if (false === ($rs = $mysqli->store_result())) {
+                    throw new \RuntimeException('db.QueryError ' . $mysqli->error);
+                }
+                $rows = $rs->fetch_all(MYSQLI_ASSOC);
+                $rs->close();
+                $results[] = [
+                    self::KEY_AFFECT_ROWS => 0,
+                    self::KEY_FIELDS => $rows,
+                ];
+            } else {
+                $results[] = [
+                    self::KEY_AFFECT_ROWS => $mysqli->affected_rows,
+                    self::KEY_FIELDS => [],
+                ];
+            }
+        } while ($mysqli->more_results() && $mysqli->next_result());
+
+        return $results;
+    }
+
+    /**
+     * 是否为写入的sql
+     * @param $sql
+     * @return bool
+     */
+    private function isWrite($sql)
+    {
+        if (is_array($sql)) {
+            foreach ($sql as $s) {
+                if ($this->isWrite($s)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return preg_match('#^(INSERT|UPDATE|DELETE|DROP|ALTER) #i', $sql) !== false;
     }
 
     /**
@@ -212,6 +266,17 @@ class Db
     {
         $this->sqlBuilder->insert();
         return $this->execute();
+    }
+
+    /**
+     * 插入数据，且有自增key
+     * @return int 返回插入的ID
+     */
+    public function insertWithLastId()
+    {
+        $this->sqlBuilder->append(SqlBuilder::lastInsertId())->insert();
+        $rows = $this->realQuery($this->sqlBuilder->toString(), $mysqli);
+        return intval(array_shift($rows[1][self::KEY_FIELDS][0]));
     }
 
     /**

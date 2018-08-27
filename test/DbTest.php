@@ -124,6 +124,21 @@ class DbTest extends TestCase
         $this->assertNotEmpty($rows);
     }
 
+    public function testAutoInc()
+    {
+        Conf::init($this->confs);
+        $lastId = Db::get('demo')
+            ->sqlBuilder(SqlBuilder::withTable('u_user')
+                ->setData([
+                    'username' => 'test',
+                    'password' => 'hello',
+                    'status' => 1,
+                ]))
+            ->insertWithLastId();
+        $this->assertNotEmpty($lastId);
+        echo 'LastInsertId:'.$lastId.PHP_EOL;
+    }
+
     /**
      *
      * @example output:
