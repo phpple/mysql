@@ -1,7 +1,10 @@
 {
   "name": "phpple/mysql",
-  "description": "a easy mysql framework",
+  "description": "The PHP Mysql Graceful Library",
   "type": "library",
+  "require": {
+    "php": "^7.0"
+  },
   "require-dev": {
     "phpunit/phpunit": "^6"
   },
