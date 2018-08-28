@@ -12,6 +12,7 @@ namespace Phpple\Mysql\Test;
 use Phpple\Mysql\ISplit;
 use Phpple\Mysql\Sql\ISqlWhere;
 use Phpple\Mysql\Sql\SqlBuilder;
+use Phpple\Mysql\Sql\Template\Compiler;
 use PHPUnit\Framework\TestCase;
 
 class SqlBuilderTest extends TestCase
@@ -32,10 +33,74 @@ class SqlBuilderTest extends TestCase
             ->limitOne()
             ->select();
         $this->assertEquals(
-            'SELECT `user_id`, `username`, `email` FROM `phpple`.`u_user` WHERE (`user_id` = 234) AND (`status` != -1) ORDER BY `user_id` ASC, `username` DESC LIMIT 0,1',
+            'SELECT `user_id`, `username`, `email` FROM `phpple`.`u_user` WHERE (`user_id` = 234) AND (`status` != -1) ORDER BY `user_id` ASC, `username` DESC LIMIT 0, 1',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
+    }
+
+    /**
+     * @expectedException InvalidArgumentException
+     * @expectedExceptionMessage sqlBuilder.orderByNullDefined
+     */
+    public function testOrderNullIllegal()
+    {
+        (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->orderBy(null)
+            ->orderBy('id', false)
+            ->toString();
+    }
+
+    public function testOrderNull()
+    {
+        $sql = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->orderBy(null)
+            ->toString();
+        $this->assertContains(' ORDER BY NULL', $sql);
+    }
+
+    /**
+     * @expectedException InvalidArgumentException
+     * @expectedExceptionMessage sqlBuilder.fieldSortedYet
+     */
+    public function testOrderRepeat()
+    {
+        (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->orderBy('id', true)
+            ->orderBy('id', false)
+            ->toString();
+    }
+
+    public function testOrderUnset()
+    {
+        $sql = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->orderBy('id', true)
+            ->unsetOrderBy()
+            ->orderBy('id', false)
+            ->toString();
+        $this->assertContains('ORDER BY `id` DESC', $sql);
+    }
+
+    public function testOrder()
+    {
+        $sql = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->orderBy('order_index')
+            ->orderBy('id', false)
+            ->limitTop(10)
+            ->toString();
+        $this->assertEquals(
+            'SELECT * FROM `phpple`.`u_user` ORDER BY `order_index` ASC, `id` DESC LIMIT 0, 10',
+            $sql
+        );
     }
 
     public function testGroup()
@@ -51,9 +116,76 @@ class SqlBuilderTest extends TestCase
             'SELECT `city_id`, count(0) FROM `phpple`.`u_user` WHERE (`status` != -1) GROUP BY `city_id`',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
     }
 
+    /**
+     *
+     */
+    public function testWhere()
+    {
+        $sql = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->where('id', 10000)
+            ->whereIn('status', [1, 2])
+            ->whereParams('city_id=?', 110900)
+            ->select()
+            ->exist()
+            ->toString();
+        $this->assertEquals(
+            'SELECT 1 FROM `phpple`.`u_user` WHERE (`id` = 10000) AND (`status` IN (1, 2)) AND (city_id=110900)',
+            $sql
+        );
+    }
+
+
+    /**
+     * @expectedException InvalidArgumentException
+     * @expectedExceptionMessage sqlBuilder.invalidNumOfParams
+     */
+    public function testWhereParamsException()
+    {
+        (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->whereParams('a=? and c=?', 1)
+            ->select()
+            ->toString();
+    }
+
+    public function testWhereOr()
+    {
+        $email = 'comdeng@live.com';
+        $username = 'comdeng';
+        $sql = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->where('status', 1)
+            ->whereOr(
+                [
+                    'email=\'' . $email . '\'',
+                    [
+                        'username=?',
+                        $username
+                    ]
+                ],
+                [
+                    [
+                        'sex=?',
+                        1
+                    ],
+                    [
+                        'sex=0'
+                    ]
+                ]
+            )
+            ->toString();
+        $this->assertEquals(
+            'SELECT * FROM `phpple`.`u_user` WHERE (`status` = 1) AND ' .
+            '(((email=\'comdeng@live.com\') AND (username=0x' . bin2hex($username) . ')) OR ((sex=1) AND (sex=0)))',
+            $sql
+        );
+    }
 
     public function testSelectForUpdate()
     {
@@ -66,7 +198,6 @@ class SqlBuilderTest extends TestCase
             'SELECT * FROM `phpple`.`u_user` WHERE (`user_id` = 10000) FOR UPDATE',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
     }
 
     public function testCount()
@@ -81,14 +212,12 @@ class SqlBuilderTest extends TestCase
             'SELECT `id` FROM `phpple`.`u_user` WHERE (`city_id` = 110900)',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString() . PHP_EOL;
 
         $sqlBuilder->count();
         $this->assertEquals(
             'SELECT COUNT(0) CNT FROM `phpple`.`u_user` WHERE (`city_id` = 110900)',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
     }
 
     public function testLastInsertId()
@@ -135,7 +264,9 @@ class SqlBuilderTest extends TestCase
             bin2hex($data['create_time']) . ')',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
+
+        $sqlBuilder->insertIgnore();
+        $this->assertContains('INSERT IGNORE INTO ', $sqlBuilder->toString());
     }
 
     public function testUpdate()
@@ -151,14 +282,27 @@ class SqlBuilderTest extends TestCase
             ->where('id', 10000)
             ->update();
         $this->assertEquals(
-            'UPDATE `phpple`.`u_user` SET `email` = 0x' .
-            bin2hex($data['email']) .
-            ', `update_time` = ' .
-            $data['@update_time'] .
-            ' WHERE (`id` = 10000)',
+            'UPDATE `phpple`.`u_user` SET `email` = 0x' . bin2hex($data['email']) . ', `update_time` = ' . $data['@update_time'] . ' WHERE (`id` = 10000)',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
+
+        $sqlBuilder->setData($data, ['email']);
+        $this->assertEquals(
+            'UPDATE `phpple`.`u_user` SET `email` = 0x' . bin2hex($data['email']) . ' WHERE (`id` = 10000)',
+            $sqlBuilder->toString()
+        );
+
+        try {
+            $sqlBuilder->setData($data, 'email');
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.fieldsMustBeArray', $ex->getMessage());
+        }
+
+        try {
+            $sqlBuilder->setData($data, ['email', 'username']);
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.dataKeyRequired username', $ex->getMessage());
+        }
     }
 
     public function testDelete()
@@ -173,14 +317,13 @@ class SqlBuilderTest extends TestCase
             'DELETE FROM `phpple`.`u_user` WHERE (`user_id` = 4) AND (`status` != -1)',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
     }
 
     public function testAppend()
     {
         $data = [
             'username' => 'comdeng',
-            'password' => md5('test'),
+            '@password' => "'".md5('test')."'",
         ];
         $sqlBuilder = new SqlBuilder();
         $sqlBuilder->db(self::DB_NAME)
@@ -191,11 +334,28 @@ class SqlBuilderTest extends TestCase
 
         $this->assertEquals(
             'INSERT INTO `phpple`.`u_user`(`username`, `password`) VALUES(0x' .
-            bin2hex($data['username']) . ', 0x' .
-            bin2hex($data['password']) . ');SELECT LAST_INSERT_ID() AS LIID',
+            bin2hex($data['username']) . ', ' .
+            $data['@password'] . ');SELECT LAST_INSERT_ID() AS LIID',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
+    }
+
+    public function testUnsetWhere()
+    {
+        $sqlBuilder = new SqlBuilder();
+        $sqlBuilder->where('status', 1)
+            ->unsetWhere()
+            ->where('id', 10000);
+        $this->assertNotContains('status', $sqlBuilder->toString());
+    }
+
+    public function testMulti()
+    {
+        $builder1 = SqlBuilder::withTable('u_user');
+        $builder2 = SqlBuilder::withTable('u_user_info');
+        $builder1->append($builder2)->db('demo');
+
+        $this->assertContains('`demo`', $builder2->toString());
     }
 
     public function testSplitTable()
@@ -207,14 +367,13 @@ class SqlBuilderTest extends TestCase
             self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . '37',
             $table
         );
-        echo $table . PHP_EOL;
 
+        // 按ID分段
         $table = SqlBuilder::getNameBySplit(self::TABLE_NAME, ISplit::SPLIT_BY_MOD, $id, 1234);
         $this->assertEquals(
             self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . ($id % 1234),
             $table
         );
-        echo $table . PHP_EOL;
 
         // 分段
         $arg = 4000000;
@@ -224,28 +383,51 @@ class SqlBuilderTest extends TestCase
             self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . round($value / $arg),
             $table
         );
-        echo $table . PHP_EOL;
+
+        $timestamp = strtotime('2018/8/29 10:23:44');
+        // 按年
+        $table = SqlBuilder::getNameBySplit(self::TABLE_NAME, ISplit::SPLIT_BY_YEAR, $timestamp);
+        $this->assertEquals(
+            self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . '2018',
+            $table
+        );
 
         // 按月份
-        $timestamp = strtotime('2018/8/29 10:23:44');
         $table = SqlBuilder::getNameBySplit(self::TABLE_NAME, ISplit::SPLIT_BY_MONTH, $timestamp);
         $this->assertEquals(
             self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . '201808',
             $table
         );
-        echo $table . PHP_EOL;
+
+        // 按天
+        $table = SqlBuilder::getNameBySplit(self::TABLE_NAME, ISplit::SPLIT_BY_DAY, $timestamp);
+        $this->assertEquals(
+            self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . '20180829',
+            $table
+        );
+
+        // 按不合法规则
+        try {
+            $table = SqlBuilder::getNameBySplit(self::TABLE_NAME, 'foobar', $timestamp);
+        } catch (\DomainException $ex) {
+            $this->assertInstanceOf('\DomainException', $ex);
+        }
+        $this->assertEquals(
+            self::TABLE_NAME . ISplit::SPLIT_CONNECT_FLAG . '20180829',
+            $table
+        );
 
         $id = 12334322092;
         $sqlBuilder = SqlBuilder::withTable(self::TABLE_NAME)
             ->db(self::DB_NAME)
             ->tableSplit(ISplit::SPLIT_BY_MOD, 100)
+            ->tableAlias('u')
             ->tableSplitValue($id)
             ->where('id', $id)
             ->select();
         $this->assertEquals(
-            'SELECT * FROM `phpple`.`u_user_92` WHERE (`id` = ' . $id . ')',
+            'SELECT * FROM `phpple`.`u_user_92` u WHERE (`id` = ' . $id . ')',
             $sqlBuilder->toString()
         );
-        echo $sqlBuilder->toString();
     }
 }

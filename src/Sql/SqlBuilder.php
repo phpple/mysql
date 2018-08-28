@@ -186,11 +186,7 @@ class SqlBuilder
                 if ($splitArgs == 10 || $splitArgs == 100 || $splitArgs == 1000) {
                     $len = strlen($splitArgs . '');
                     $v = substr($splitValue . '', -($len - 1));
-                    if ($v === false) {
-                        $subfix = $splitValue;
-                    } else {
-                        $subfix = intval($v);
-                    }
+                    $subfix = intval($v);
                 } else {
                     $subfix = $splitValue % $splitArgs;
                 }
@@ -288,7 +284,7 @@ class SqlBuilder
     {
         $this->causes[] = ISqlWhere::LOGIC_AND;
         $this->causes[] = sprintf(
-            '%s %s (%s)',
+            '(%s %s (%s))',
             $this->wrapperField($field),
             ISqlWhere::RANGE_IN,
             $this->escapeVal($items)
@@ -331,7 +327,7 @@ class SqlBuilder
     {
         $num = substr_count($cause, ISqlWhere::SQL_PARAM_FLAG);
         if ($num != count($params)) {
-            throw new \InvalidArgumentException('invalid num of params');
+            throw new \InvalidArgumentException('sqlBuilder.invalidNumOfParams');
         }
         $cause = str_replace(ISqlWhere::SQL_PARAM_FLAG, '%s', $cause);
         $params = array_map([$this, 'escapeVal'], $params);
@@ -363,7 +359,7 @@ class SqlBuilder
         $sqlA = $this->buildParamWheres($causeA);
         $sqlB = $this->buildParamWheres($causeB);
 
-        $this->causes[] = "({$sqlA}" . ISqlWhere::LOGIC_OR . " {$sqlB})";
+        $this->causes[] = "({$sqlA} " . ISqlWhere::LOGIC_OR . " {$sqlB})";
 
         return $this;
     }
@@ -379,12 +375,15 @@ class SqlBuilder
         foreach ($causes as $cause) {
             if (is_string($cause)) {
                 $sqls[] = "($cause)";
-            } elseif (is_array($cause)) {
-                if (count($cause) < 2) {
-                    throw new \InvalidArgumentException('cause length must greater than 1');
+            } elseif (is_array($cause) && !empty($cause)) {
+                $num = count($cause);
+
+                if ($num == 1) {
+                    $sqls[] = '(' . $cause[0] . ')';
+                } else {
+                    $c = array_shift($cause);
+                    $sqls[] = $this->buildParamWhere($c, $cause);
                 }
-                $c = array_shift($cause);
-                $sqls[] = $this->buildParamWhere($c, $cause);
             }
         }
         return '(' . implode(' ' . ISqlWhere::LOGIC_AND . ' ', $sqls) . ')';
@@ -470,15 +469,20 @@ class SqlBuilder
      * @param array $data
      * @param null|array $fields 需要保存的字段是哪些
      * @return $this
+     * @throws \InvalidArgumentException sqlBuilder.fieldsMustBeArray
+     * @throws \InvalidArgumentException sqlBuilder.dataKeyRequired
      */
     public function setData(array $data, $fields = null)
     {
         $this->dataFields = $fields;
         if ($fields !== null) {
+            if (!is_array($fields)) {
+                throw new \InvalidArgumentException('sqlBuilder.fieldsMustBeArray');
+            }
             $body = [];
             foreach ($fields as $key) {
-                if (!array_key_exists($data, $key)) {
-                    throw new \InvalidArgumentException('data key required:' . $key);
+                if (!array_key_exists($key, $data)) {
+                    throw new \InvalidArgumentException('sqlBuilder.dataKeyRequired ' . $key);
                 } else {
                     $body[$key] = $data[$key];
                 }
@@ -574,7 +578,7 @@ class SqlBuilder
      * @param int $num
      * @return $this
      */
-    public function limitFirst(int $num)
+    public function limitTop(int $num)
     {
         return $this->limit(0, $num)->select();
     }
@@ -587,7 +591,7 @@ class SqlBuilder
         if (!$this->limit) {
             return '';
         }
-        return sprintf(' LIMIT %d,%d', $this->limit[0], $this->limit[1]);
+        return sprintf(' LIMIT %d, %d', $this->limit[0], $this->limit[1]);
     }
 
     /**
@@ -595,8 +599,8 @@ class SqlBuilder
      * 可以多次调用
      * @param string $field 如果传入null，表示不进行任何排序，最后相当于order by null
      * @param bool $asc
-     * @throws \InvalidArgumentException field sorted 字段不能被重复排序
-     * @throws \InvalidArgumentException order by null defined 已经定义过order by null
+     * @throws \InvalidArgumentException sqlBuilder.fieldSortedYet 字段不能被重复排序
+     * @throws \InvalidArgumentException sqlBuilder.orderByNullDefined 已经定义过order by null
      * @return $this
      */
     public function orderBy($field, bool $asc = true)
@@ -604,13 +608,23 @@ class SqlBuilder
         $field = $field === null ? $field : $this->wrapperField($field);
         foreach ($this->orders as $o) {
             if ($o[0] === null) {
-                throw new \InvalidArgumentException('order by null defined');
+                throw new \InvalidArgumentException('sqlBuilder.orderByNullDefined');
             }
             if ($o[0] == $field) {
-                throw new \InvalidArgumentException('field sorted');
+                throw new \InvalidArgumentException('sqlBuilder.fieldSortedYet');
             }
         }
-        $this->orders[] = [$field === null ? 'NULL' : $field, $asc];
+        $this->orders[] = [$field === null ? null : $field, $asc];
+        return $this;
+    }
+
+    /**
+     * 重置orderBy条件
+     * @return $this
+     */
+    public function unsetOrderBy()
+    {
+        $this->orders = [];
         return $this;
     }
 
@@ -625,7 +639,7 @@ class SqlBuilder
         }
         $sqls = [];
         foreach ($this->orders as $order) {
-            if ($order[0] === 'NULL') {
+            if ($order[0] === null) {
                 $sqls[] = 'NULL';
                 continue;
             }
