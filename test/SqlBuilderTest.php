@@ -36,6 +36,8 @@ class SqlBuilderTest extends TestCase
             'SELECT `user_id`, `username`, `email` FROM `phpple`.`u_user` WHERE (`user_id` = 234) AND (`status` != -1) ORDER BY `user_id` ASC, `username` DESC LIMIT 0, 1',
             $sqlBuilder->toString()
         );
+
+        $this->assertEquals($sqlBuilder->toString(), $sqlBuilder->__toString());
     }
 
     /**

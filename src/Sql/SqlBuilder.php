@@ -831,6 +831,9 @@ class SqlBuilder
     public function append(SqlBuilder $builder)
     {
         $this->tail = $builder;
+        if ($this->db) {
+            $this->tail->db($this->db);
+        }
         return $this;
     }
 
