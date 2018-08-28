@@ -15,3 +15,6 @@ create table u_user (
 	`update_time` timestamp not null default current_timestamp,
     primary key(`id`)
 ) engine innodb charset utf8;
+
+insert into u_user(`id`, `username`, `password`, `status`) values(10000, 'ronnie', '1b927c6a9d291f12a60139ae0a65cf51461cace3', 1);
+insert into u_user(`id`, `username`, `password`, `status`) values(10001, 'ronnie', '1b927c6a9d291f12a60139ae0a65cf51461cace3', 1);
