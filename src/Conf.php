@@ -31,6 +31,13 @@
  *        'dbname' => 'phpple',
  *        'instance' => 'ip2',
  *        'persist' => true,
+ *        'splits' => [
+ *          'post' => [
+ *            'field' => 'id',
+ *            'method' => 'day',
+ *            'args' => 4000000,
+ *          ]
+ *        ]
  *      ]
  *   ]
  * ]
@@ -59,17 +66,20 @@ class Conf
     const CONF_DB_PERSIST = 'persist';
     const CONF_DB_FLAG = '{key}';
 
+
+
     /**
      * 初始化db的全部配置
      * @param array $confs
+     * @throws \InvalidArgumentException conf.keyNotFound
      */
     public static function init(array $confs)
     {
         if (!isset($confs[self::KEY_DBS])) {
-            throw new \InvalidArgumentException('confs must contain ' . self::KEY_DBS);
+            throw new \InvalidArgumentException('conf.dbKeyNotFound');
         }
         if (!isset($confs[self::KEY_INSTANCES])) {
-            throw new \InvalidArgumentException('confs must contain ' . self::KEY_INSTANCES);
+            throw new \InvalidArgumentException('conf.instanceKeyNotFound');
         }
         self::$confs = $confs;
     }
@@ -96,7 +106,7 @@ class Conf
     {
         if (!isset(self::$dbConfs[$db])) {
             if (!isset(self::$confs[self::KEY_DBS][$db])) {
-                throw new \InvalidArgumentException('db not defined:' . $db);
+                throw new \InvalidArgumentException('conf.dbNotDefined ' . $db);
             }
             self::initDbConf($db);
         }
@@ -122,13 +132,13 @@ class Conf
         $alias = self::$confs[self::KEY_DBS][$db];
         if (is_string($alias)) {
             if (!isset(self::$confs[self::KEY_ALIAS][$alias])) {
-                throw new \DomainException('alias not defined:' . $alias);
+                throw new \UnexpectedValueException('conf.aliasNotDefined ' . $alias);
             }
             $conf = self::$confs[self::KEY_ALIAS][$alias];
         } elseif (is_array($alias)) {
             $conf = $alias;
         } else {
-            throw new \UnexpectedValueException('conf must be string or array');
+            throw new \UnexpectedValueException('conf.aliasMustBeStringOrArray');
         }
 
         $dbConfs = [
@@ -138,9 +148,8 @@ class Conf
 
         // 检查instance
         if (!isset($conf[self::CONF_DB_INSTANCE])) {
-            throw new \UnexpectedValueException(self::CONF_DB_INSTANCE . ' must be defined');
+            throw new \UnexpectedValueException('conf.instanceMustDefined');
         }
-
         // 初始化名称
         if (!isset($conf[self::CONF_DB_NAME])) {
             $conf[self::CONF_DB_NAME] = $db;
@@ -148,7 +157,7 @@ class Conf
             $name = str_replace(self::CONF_DB_FLAG, $db, $conf[self::CONF_DB_NAME]);
             $conf[self::CONF_DB_NAME] = $name;
         } else {
-            throw new \UnexpectedValueException('name must be string');
+            throw new \UnexpectedValueException('conf.dbnameMustBeString');
         }
         // 初始化持久化
         if (!isset($conf[self::CONF_DB_PERSIST])) {
@@ -158,6 +167,10 @@ class Conf
         // 初始化instance
         $instances = $conf[self::CONF_DB_INSTANCE];
         if (is_string($instances)) {
+            if (!isset(self::$confs[self::KEY_INSTANCES][$instances])) {
+                throw new \UnexpectedValueException('conf.instanceNotFound '.$instances);
+            }
+
             $dbConfs[self::KEY_MASTER] = self::$confs[self::KEY_INSTANCES][$instances];
             $dbConfs[self::KEY_MASTER][self::CONF_DB_NAME] = $conf[self::CONF_DB_NAME];
             $dbConfs[self::KEY_MASTER][self::CONF_DB_PERSIST] = $conf[self::CONF_DB_PERSIST];
@@ -169,19 +182,19 @@ class Conf
         }
 
         if (!is_array($instances)) {
-            throw new \UnexpectedValueException('instance must be string or array');
+            throw new \UnexpectedValueException('conf.instanceMustBeStringOrArray');
         }
 
         // 如果instance是数组，则必须同时定义master和slave，且slave必须是数组
         if (!isset($instances[self::KEY_MASTER])
             || !isset($instances[self::KEY_SLAVE])
             || !is_array($instances[self::KEY_SLAVE])) {
-            throw new \UnexpectedValueException('master and slave must defined both');
+            throw new \UnexpectedValueException('conf.masterAndSlaveMustDefinedBoth');
         }
 
-        // 检查对应的示例是否已经被定义
+        // 检查对应的实例是否已经被定义
         if (!isset(self::$confs[self::KEY_INSTANCES][$instances[self::KEY_MASTER]])) {
-            throw new \UnexpectedValueException('master instance must defined both');
+            throw new \UnexpectedValueException('conf.masterInstanceMustDefined');
         }
 
         // 初始化主库配置
@@ -194,7 +207,7 @@ class Conf
         $slaveConfs = [];
         foreach ($instances[self::KEY_SLAVE] as $slaveInstance) {
             if (!isset(self::$confs[self::KEY_INSTANCES][$slaveInstance])) {
-                throw new \UnexpectedValueException('slave instance not defined:' . $slaveInstance);
+                throw new \UnexpectedValueException('conf.slaveInstanceNotDefined ' . $slaveInstance);
             }
             $slaveConf = self::$confs[self::KEY_INSTANCES][$slaveInstance];
             $slaveConf[self::CONF_DB_NAME] = $conf[self::CONF_DB_NAME];

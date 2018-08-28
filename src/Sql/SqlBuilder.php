@@ -9,6 +9,7 @@
 
 namespace Phpple\Mysql\Sql;
 
+use Phpple\Mysql\ISplit;
 use Phpple\Mysql\Sql\Template\Compiler;
 
 class SqlBuilder
@@ -19,9 +20,23 @@ class SqlBuilder
      */
     const RAW_VALUE_FLAG = '@';
 
+    /**
+     * sql语句的关键字段的区别符号
+     */
+    const SQL_KEYWORD_FLAG = '`';
+
     private $db;
     private $table;
     private $tableAlias;
+
+    /**
+     * @var array table的分库策略
+     */
+    private $tableSplit = null;
+    /**
+     * @var int 用来实现table分表的值
+     */
+    private $tableSplitValue;
 
     /**
      * @var array
@@ -94,15 +109,22 @@ class SqlBuilder
     }
 
     /**
+     * 获取db的sql
+     * @return string
+     */
+    public function getDbSql()
+    {
+        return self::SQL_KEYWORD_FLAG . $this->db . self::SQL_KEYWORD_FLAG;
+    }
+
+    /**
      * 设置表名
      * @param string $table
-     * @param string $alias
      * @return $this
      */
-    public function table(string $table, string $alias = '')
+    public function table(string $table)
     {
         $this->table = $table;
-        $this->tableAlias = $alias ? $alias : '';
         return $this;
     }
 
@@ -115,6 +137,104 @@ class SqlBuilder
     {
         $this->tableAlias = $alias;
         return $this;
+    }
+
+    /**
+     * 设置分表方法和参数
+     * @param string $method
+     * @param mixed $args
+     * @return $this
+     */
+    public function tableSplit(string $method, $args)
+    {
+        $this->tableSplit = [
+            'method' => $method,
+            'args' => $args
+        ];
+        return $this;
+    }
+
+    /**
+     * 设置实现分表的决定值
+     * @param int $value
+     * @return $this
+     */
+    public function tableSplitValue(int $value)
+    {
+        $this->tableSplitValue = $value;
+        return $this;
+    }
+
+    /**
+     * 获取分表的名称
+     * @param string $name
+     * @param string $splitMethod
+     * @param int $splitValue
+     * @param mixed $splitArgs
+     * @return string
+     * @throws \DomainException sqlBuilder.splitMethodNotDefined
+     */
+    public static function getNameBySplit(string $name, string $splitMethod, int $splitValue, $splitArgs = null)
+    {
+        $subfix = '';
+        switch ($splitMethod) {
+            case ISplit::SPLIT_BY_MOD:
+                if ($splitArgs == 10 || $splitArgs == 100 || $splitArgs == 1000) {
+                    $len = strlen($splitArgs . '');
+                    $v = substr($splitValue . '', -($len - 1));
+                    if ($v === false) {
+                        $subfix = $splitValue;
+                    } else {
+                        $subfix = intval($v);
+                    }
+                } else {
+                    $subfix = $splitValue % $splitArgs;
+                }
+                break;
+            case ISplit::SPLIT_BY_DIV:
+                $subfix = round($splitValue / $splitArgs);
+                break;
+            case ISplit::SPLIT_BY_YEAR:
+                $subfix = date('Y', $splitValue);
+                break;
+            case ISplit::SPLIT_BY_MONTH:
+                $subfix = date('Ym', $splitValue);
+                break;
+            case ISplit::SPLIT_BY_DAY:
+                $subfix = date('Ymd', $splitValue);
+                break;
+            default:
+                throw new \DomainException('sqlBuilder.splitMethodNotDefined ' . $splitMethod);
+        }
+        return $name . ISplit::SPLIT_CONNECT_FLAG . $subfix;
+    }
+
+    /**
+     * 获取table的sql
+     * @return string
+     */
+    public function getTableSql()
+    {
+        if ($this->tableSplitValue && $this->tableSplit) {
+            $table = self::getNameBySplit(
+                $this->table,
+                $this->tableSplit['method'],
+                $this->tableSplitValue,
+                $this->tableSplit['args']
+            );
+        } else {
+            $table = $this->table;
+        }
+        $ret = self::SQL_KEYWORD_FLAG . $table . self::SQL_KEYWORD_FLAG;
+        if ($this->tableAlias) {
+            $ret .= ' ' . $this->tableAlias;
+        }
+        return $ret;
+    }
+
+    public function getJoinSql()
+    {
+        return '';
     }
 
     /**
@@ -135,7 +255,7 @@ class SqlBuilder
      * 获取要查找的字段
      * @return string
      */
-    public function getFieldSql()
+    public function getFieldsSql()
     {
         if (empty($this->fields)) {
             return self::ALL_FIELDS_FLAG;
@@ -179,12 +299,12 @@ class SqlBuilder
 
     /**
      * 通过参数查询
-     * @param $cause 条件
+     * @param string $cause 条件
      * @param mixed ...$params 参数
      * @example ->whereParams('a=? and (b=?  or c=?)', 3, 4, 5)
      * @return $this
      */
-    public function whereParams($cause, ...$params)
+    public function whereParams(string $cause, ...$params)
     {
         $this->causes[] = ISqlWhere::LOGIC_AND;
         $this->causes[] = $this->buildParamWhere($cause, $params);
@@ -263,33 +383,40 @@ class SqlBuilder
      */
     public function escapeVal($orig, $level = 0)
     {
+        $dest = $orig;
         switch (true) {
             case is_int($orig):
-                return $orig;
+                $dest = $orig;
+                break;
             case is_string($orig):
-                return '0x' . bin2hex($orig);
+                $dest = '0x' . bin2hex($orig);
+                break;
             case is_numeric($orig):
                 if (0 == $orig) {
-                    return "'0'";
+                    $dest = "'0'";
+                    break;
                 }
-                return $orig;
+                break;
             case is_null($orig):
-                return 'NULL';
+                $dest = 'NULL';
+                break;
             case is_bool($orig):
-                return $orig ? 1 : 0;
+                $dest = $orig ? 1 : 0;
+                break;
             case is_array($orig) && $level < 2:
                 if (empty($orig)) {
-                    throw new \InvalidArgumentException('not support type');
+                    throw new \InvalidArgumentException('sqlBuilder.emptyNotAllowd');
                 }
                 $arr = [];
                 foreach ($orig as $v) {
                     $arr[] = $this->escapeVal($v, $level + 1);
                 }
-                return implode(', ', $arr);
+                $dest = implode(', ', $arr);
+                break;
             default:
-                throw new \InvalidArgumentException('not support type');
-
+                throw new \DomainException('sqlBuilder.notSupportType');
         }
+        return $dest;
     }
 
     /**
@@ -306,7 +433,7 @@ class SqlBuilder
         $pos1 = strpos($fieldStr, '.');
         $pos2 = strpos($fieldStr, '(');
         if ($pos1 === false && $pos2 === false) {
-            return '`' . $fieldStr . '`';
+            return self::SQL_KEYWORD_FLAG . $fieldStr . self::SQL_KEYWORD_FLAG;
         }
         return $fieldStr;
     }
@@ -545,7 +672,7 @@ class SqlBuilder
 
     /**
      * 获取是否存在
-     * @param string $existVal 如果存在时返回的字段值为多少
+     * @param int $existVal 如果存在时返回的字段值为多少
      * @return $this
      */
     public function exist($existVal = 1)
@@ -660,32 +787,11 @@ class SqlBuilder
      */
     public function generateTplVar($name)
     {
-        switch ($name) {
-            case 'DB':
-                return $this->db;
-            case 'TABLE':
-                return $this->table;
-            case 'FIELDS':
-                return $this->getFieldSql();
-            case 'WHERE':
-                return $this->getWhereSql();
-            case 'LIMIT':
-                return $this->getLimitSql();
-            case 'ORDER':
-                return $this->getOrderSql();
-            case 'GROUP':
-                return $this->getGroupSql();
-            case 'KEYS':
-                return $this->getKeysSql();
-            case 'VALUES':
-                return $this->getValuesSql();
-            case 'UPDATES':
-                return $this->getUpdatesSql();
-            case 'JOIN':
-                return '';
-            default:
-                throw new \InvalidArgumentException('var not implemented:' . $name);
+        $method = 'get' . ucfirst($name) . 'Sql';
+        if (!method_exists($this, $method)) {
+            throw new \DomainException('sqlBuilder.varNotImplemented ' . $name);
         }
+        return call_user_func([$this, $method]);
     }
 
     /**

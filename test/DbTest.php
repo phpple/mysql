@@ -113,7 +113,7 @@ class DbTest extends TestCase
             ->fields('id', 'username')
             ->whereIn('id', [12006, 12008, 12010])
             ->setData([
-                'status' => 1,
+                'status' => -1,
             ]);
         $db = Db::get('demo');
         $db->sqlBuilder($sqlBuilder)
@@ -174,5 +174,4 @@ class DbTest extends TestCase
 
         $this->assertEquals($viewNum + 1, $newViewnum);
     }
-
 }

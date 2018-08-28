@@ -33,24 +33,24 @@ class Compiler
      * @var array sql操作和对应的模板
      */
     private static $sqlTemplates = [
-        self::SELECT => 'SELECT {FIELDS} FROM `{DB}`.`{TABLE}`{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT}',
-        self::SELECT_FOR_UPDATE => 'SELECT {FIELDS} FROM `{DB}`.`{TABLE}`{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT} FOR UPDATE',
+        self::SELECT => 'SELECT {FIELDS} FROM {DB}.{TABLE}{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT}',
+        self::SELECT_FOR_UPDATE => 'SELECT {FIELDS} FROM {DB}.{TABLE}{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT} FOR UPDATE',
         self::SELECT_LAST_INSERT_ID => 'SELECT LAST_INSERT_ID() AS LIID',
-        self::DESC_TABLE => 'DESC `{DB}`.`{TABLE}`',
-        self::SHOW_CREATE_TABLE => 'SHOW CREATE TABLE `{DB}`.`{TABLE}`',
+        self::DESC_TABLE => 'DESC {DB}.{TABLE}',
+        self::SHOW_CREATE_TABLE => 'SHOW CREATE TABLE {DB}.{TABLE}',
         self::EXPLAIN => 'EXPLAIN {SQL}',
         self::SHOW => 'SHOW {SQL}',
-        self::INSERT => 'INSERT INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES})',
-        self::INSERT_IGNORE => 'INSERT IGNORE INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES})',
-        self::INSERT_UPDATE => 'INSERT INTO `{DB}`.`{TABLE}`({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
-        self::UPDATE => 'UPDATE `{DB}`.`{TABLE}` SET {UPDATES}{WHERE}',
-        self::UPDATE_CASE => 'UPDATE `{DB}`.`{TABLE}` 
+        self::INSERT => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
+        self::INSERT_IGNORE => 'INSERT IGNORE INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
+        self::INSERT_UPDATE => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
+        self::UPDATE => 'UPDATE {DB}.{TABLE} SET {UPDATES}{WHERE}',
+        self::UPDATE_CASE => 'UPDATE {DB}.{TABLE} 
 SET {FIELD}=CASE {PRIKEY}
 {CASES}
 END
 {WHERE}',
-        self::DELETE => 'DELETE FROM `{DB}`.`{TABLE}`{WHERE}',
-        self::REPLACE => 'REPLACE INTO `{DB}`.`{TABLE}`({FIELDS}) VALUES({VALUES})',
+        self::DELETE => 'DELETE FROM {DB}.{TABLE}{WHERE}',
+        self::REPLACE => 'REPLACE INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
     ];
 
     /**
@@ -68,7 +68,7 @@ END
     public static function addTemplate(string $key, string $template)
     {
         if (isset(self::$sqlTemplates[$key])) {
-            throw new \InvalidArgumentException('key defined');
+            throw new \DomainException('key defined');
         }
         self::$userTemplates[$key] = $template;
     }
@@ -93,7 +93,7 @@ END
     public static function compile(string $key, $callback)
     {
         if (!is_callable($callback)) {
-            throw new \InvalidArgumentException('callback must be callable');
+            throw new \InvalidArgumentException('compiler.callbackMustBeCallable');
         }
 
         $template = '';
@@ -103,7 +103,7 @@ END
             $template = self::$userTemplates[$key];
         }
         if (!$template) {
-            throw new \InvalidArgumentException('template key not defined');
+            throw new \InvalidArgumentException('compiler.templateKeyNotDefined '.$key);
         }
 
         $sqls = [];
@@ -138,7 +138,7 @@ END
     public static function compileWithVars(string $key, array $vars)
     {
         return self::compile($key, function ($name) use ($vars) {
-            if (array_key_exists($vars, $name)) {
+            if (array_key_exists($name, $vars)) {
                 return $vars[$name];
             }
             return '';
