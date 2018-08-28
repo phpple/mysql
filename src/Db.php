@@ -103,7 +103,6 @@ class Db
         $mysqli = $this->getMysqli($conf);
         if (!$multi) {
             $ret = $mysqli->query($sql);
-            error_log('sql:' . $sql, 4);
             if ($ret === false) {
                 throw new \RuntimeException($mysqli->error);
             }

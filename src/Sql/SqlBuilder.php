@@ -25,6 +25,11 @@ class SqlBuilder
      */
     const SQL_KEYWORD_FLAG = '`';
 
+    /**
+     * 多条sql语句连接符号
+     */
+    const SQL_JOIN_FLAG = ';';
+
     private $db;
     private $table;
     private $tableAlias;
@@ -81,6 +86,11 @@ class SqlBuilder
      */
     private $dataFields = [];
 
+    /**
+     * @var array|null 遇到重复key时更新的数据
+     */
+    private $dupUpdates = null;
+
 
     /**
      * @var SqlBuilder[] builder的跟随者
@@ -115,9 +125,13 @@ class SqlBuilder
     /**
      * 获取db的sql
      * @return string
+     * @throws \UnexpectedValueException sqlBuilder.dbNotDefined
      */
     public function getDbSql()
     {
+        if (!$this->db) {
+            throw new \UnexpectedValueException('sqlBuilder.dbNotDefined');
+        }
         return self::SQL_KEYWORD_FLAG . $this->db . self::SQL_KEYWORD_FLAG;
     }
 
@@ -212,9 +226,13 @@ class SqlBuilder
     /**
      * 获取table的sql
      * @return string
+     * @throws \UnexpectedValueException sqlBuilder.tableNotDefined
      */
     public function getTableSql()
     {
+        if (!$this->table) {
+            throw new \UnexpectedValueException('sqlBuilder.tableNotDefined');
+        }
         if ($this->tableSplitValue && $this->tableSplit) {
             $table = self::getNameBySplit(
                 $this->table,
@@ -394,6 +412,8 @@ class SqlBuilder
      * @param $orig
      * @param int $level
      * @return string
+     * @throws \InvalidArgumentException sqlBuilder.emptyNotAllowd
+     * @throws \InvalidArgumentException sqlBuilder.notSupportType
      */
     public function escapeVal($orig, $level = 0)
     {
@@ -406,10 +426,7 @@ class SqlBuilder
                 $dest = '0x' . bin2hex($orig);
                 break;
             case is_numeric($orig):
-                if (0 == $orig) {
-                    $dest = "'0'";
-                    break;
-                }
+                $dest = $orig;
                 break;
             case is_null($orig):
                 $dest = 'NULL';
@@ -428,7 +445,7 @@ class SqlBuilder
                 $dest = implode(', ', $arr);
                 break;
             default:
-                throw new \DomainException('sqlBuilder.notSupportType');
+                throw new \InvalidArgumentException('sqlBuilder.notSupportType');
         }
         return $dest;
     }
@@ -437,12 +454,13 @@ class SqlBuilder
      * 将字段进行包装
      * @param string $fieldStr
      * @return string
+     * @throws \InvalidArgumentException sqlBuilder.illealField
      * @TODO 需要进一步完善
      */
     public function wrapperField($fieldStr)
     {
         if (!$fieldStr || is_int($fieldStr)) {
-            return $fieldStr;
+            throw new \InvalidArgumentException('sqlBuilder.illealField');
         }
         $pos1 = strpos($fieldStr, '.');
         $pos2 = strpos($fieldStr, '(');
@@ -469,11 +487,15 @@ class SqlBuilder
      * @param array $data
      * @param null|array $fields 需要保存的字段是哪些
      * @return $this
+     * @throws \InvalidArgumentException sqlBuilder.dataNotAllowEmpty
      * @throws \InvalidArgumentException sqlBuilder.fieldsMustBeArray
      * @throws \InvalidArgumentException sqlBuilder.dataKeyRequired
      */
     public function setData(array $data, $fields = null)
     {
+        if (empty($data)) {
+            throw new \InvalidArgumentException('sqlBuilder.dataNotAllowEmpty');
+        }
         $this->dataFields = $fields;
         if ($fields !== null) {
             if (!is_array($fields)) {
@@ -498,9 +520,13 @@ class SqlBuilder
     /**
      * 获取要更新的字段
      * @return string
+     * @throws \UnexpectedValueException sqlBuilder.dataEmpty
      */
     public function getKeysSql()
     {
+        if (empty($this->data)) {
+            throw new \UnexpectedValueException('sqlBuilder.dataEmpty');
+        }
         $keys = [];
         foreach ($this->dataFields as $key) {
             if ($key[0] == self::RAW_VALUE_FLAG) {
@@ -514,11 +540,12 @@ class SqlBuilder
 
     /**
      * 获取要插入的数据
+     * @throws \UnexpectedValueException sqlBuilder.dataEmpty
      */
     public function getValuesSql()
     {
         if (empty($this->data)) {
-            return '';
+            throw new \UnexpectedValueException('sqlBuilder.dataEmpty');
         }
         $values = [];
         foreach ($this->dataFields as $field) {
@@ -534,11 +561,12 @@ class SqlBuilder
 
     /**
      * 获取update的更新语句
+     * @throws \UnexpectedValueException sqlBuilder.dataEmpty
      */
     public function getUpdatesSql()
     {
         if (empty($this->data)) {
-            return '';
+            throw new \UnexpectedValueException('sqlBuilder.dataEmpty');
         }
         $kvs = [];
         foreach ($this->dataFields as $field) {
@@ -549,6 +577,68 @@ class SqlBuilder
             }
         }
         return implode(', ', $kvs);
+    }
+
+    /**
+     * 当遇到重复的键时需要更新的数据
+     * @param array|null $updates
+     * @return $this
+     * @throws \InvalidArgumentException sqlBuilder.updatesNotAllowEmpty
+     */
+    public function onDuplicate($updates)
+    {
+        if ($updates !== null && is_array($updates) && empty($updates)) {
+            throw new \InvalidArgumentException('sqlBuilder.updatesNotAllowEmpty');
+        }
+        $this->dupUpdates = $updates;
+        return $this;
+    }
+
+    /**
+     * 获取遇到重复的键时需要更新的数据的sql
+     * @return string
+     */
+    public function getDupupdatesSql()
+    {
+        if (!empty($this->dupUpdates)) {
+            $sqls = [];
+            foreach ($this->dupUpdates as $key => $value) {
+                $raw = false;
+                if ($key[0] == self::RAW_VALUE_FLAG) {
+                    $raw = true;
+                    $key = substr($key, 1);
+                }
+                $key = self::SQL_KEYWORD_FLAG . $key . self::SQL_KEYWORD_FLAG;
+                if ($value === null) {
+                    $sqls[] = $key . ' = VALUES(' . $key . ')';
+                } elseif ($raw) {
+                    $sqls[] = $key . ' = ' . $value;
+                } else {
+                    $sqls[] = $key . ' = ' . $this->escapeVal($value);
+                }
+            }
+            return implode(', ', $sqls);
+        }
+
+        // 没有设置dupUpdates时
+        $sqls = [];
+        foreach ($this->dataFields as $key) {
+            $raw = false;
+            $rawValue = null;
+            if ($key[0] == self::RAW_VALUE_FLAG) {
+                $raw = true;
+                $rawValue = $this->data[$key];
+                $key = substr($key, 1);
+            }
+            $key = self::SQL_KEYWORD_FLAG . $key . self::SQL_KEYWORD_FLAG;
+            // 有可能是表达式
+            if ($raw) {
+                $sqls[] = $key . ' = ' . $rawValue;
+            } else {
+                $sqls[] = $key . ' = VALUES(' . $key . ')';
+            }
+        }
+        return implode(', ', $sqls);
     }
 
 
@@ -712,6 +802,15 @@ class SqlBuilder
     }
 
     /**
+     * 返回一个空构建器
+     * @return SqlBuilder
+     */
+    public static function none()
+    {
+        return (new SqlBuilder())->operation(Compiler::NONE);
+    }
+
+    /**
      * 获取最后插入id的SqlBuilder
      * @return SqlBuilder
      */
@@ -802,7 +901,7 @@ class SqlBuilder
     public function operation(string $operation)
     {
         if (!Compiler::validKey($operation)) {
-            throw new \InvalidArgumentException("illegal operation");
+            throw new \DomainException("sqlBuilder.operationNotDefine " . $operation);
         }
         $this->operation = $operation;
         return $this;
@@ -816,9 +915,9 @@ class SqlBuilder
      */
     public function generateTplVar($name)
     {
-        $method = 'get' . ucfirst($name) . 'Sql';
+        $method = 'get' . ucfirst(strtolower($name)) . 'Sql';
         if (!method_exists($this, $method)) {
-            throw new \DomainException('sqlBuilder.varNotImplemented ' . $name);
+            throw new \DomainException('sqlBuilder.varNotImplemented ' . $method);
         }
         return call_user_func([$this, $method]);
     }
@@ -864,11 +963,21 @@ class SqlBuilder
      */
     public function toString()
     {
-        $ret = Compiler::compile($this->operation, [$this, 'generateTplVar']);
-        foreach ($this->follows as $follow) {
-            $ret .= ';' . $follow->toString();
+        $sqls = [];
+        $sql = Compiler::compile($this->operation, [$this, 'generateTplVar']);
+        if ($sql) {
+            $sqls[] = $sql;
         }
-        return $ret;
+
+        foreach ($this->follows as $follow) {
+            $sql = $follow->toString();
+            if ($sql) {
+                $sqls[] = $sql;
+            }
+        }
+        $lastSql = implode(self::SQL_JOIN_FLAG, $sqls);
+        error_log('sql:' . $lastSql, 4);
+        return $lastSql;
     }
 
     /**

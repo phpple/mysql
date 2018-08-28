@@ -11,6 +11,7 @@ namespace Phpple\Mysql\Sql\Template;
 
 class Compiler
 {
+    const NONE = 'none';
     const SELECT = 'select';
     const SELECT_FOR_UPDATE = 'selectForUpdate';
     const SELECT_LAST_INSERT_ID = 'selectLastInsertId';
@@ -33,6 +34,7 @@ class Compiler
      * @var array sql操作和对应的模板
      */
     private static $sqlTemplates = [
+        self::NONE => '',
         self::SELECT => 'SELECT {FIELDS} FROM {DB}.{TABLE}{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT}',
         self::SELECT_FOR_UPDATE => 'SELECT {FIELDS} FROM {DB}.{TABLE}{JOIN}{WHERE}{ORDER}{GROUP}{LIMIT} FOR UPDATE',
         self::SELECT_LAST_INSERT_ID => 'SELECT LAST_INSERT_ID() AS LIID',
@@ -42,7 +44,7 @@ class Compiler
         self::SHOW => 'SHOW {SQL}',
         self::INSERT => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
         self::INSERT_IGNORE => 'INSERT IGNORE INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
-        self::INSERT_UPDATE => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {UPDATES}',
+        self::INSERT_UPDATE => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {DUPUPDATES}',
         self::UPDATE => 'UPDATE {DB}.{TABLE} SET {UPDATES}{WHERE}',
         self::UPDATE_CASE => 'UPDATE {DB}.{TABLE} 
 SET {FIELD}=CASE {PRIKEY}
@@ -101,9 +103,8 @@ END
             $template = self::$sqlTemplates[$key];
         } elseif (isset(self::$userTemplates[$key])) {
             $template = self::$userTemplates[$key];
-        }
-        if (!$template) {
-            throw new \InvalidArgumentException('compiler.templateKeyNotDefined '.$key);
+        } else {
+            throw new \InvalidArgumentException('compiler.templateKeyNotDefined ' . $key);
         }
 
         $sqls = [];

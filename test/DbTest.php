@@ -47,7 +47,7 @@ class DbTest extends TestCase
     public function testCount()
     {
         $sqlBuilder = SqlBuilder::withTable('u_user')
-            ->where('status', 0);
+            ->where('status', 1);
         $db = Db::get('demo')->sqlBuilder($sqlBuilder);
         $count = $db->getCount();
         $this->assertGreaterThan(0, $count);
@@ -103,10 +103,6 @@ class DbTest extends TestCase
         $this->assertNull($one);
     }
 
-    /**
-     * @covers \Phpple\Mysql\Db::insert()
-     * @covers \Phpple\Mysql\Db::getOne()
-     */
     public function testInserts()
     {
         $sqlBuider = SqlBuilder::withTable('u_user');
@@ -125,11 +121,36 @@ class DbTest extends TestCase
                 'password' => md5('password' . $i),
                 'email' => 'ronnie' . $i . '@live.com',
             ]);
-            $db->insert();
+            if ($i < 50) {
+                $db->insertIgnore();
+            } else {
+                $db->insert();
+            }
         }
         $id = random_int(12000, 12099);
         $sqlBuider->where('id', $id);
         $this->assertNotEmpty($db->getOne());
+
+        $sqlBuilderEmpty = SqlBuilder::none();
+        for ($i = 0; $i < 10; $i++) {
+            $sqlBuilderEmpty->push(
+                SqlBuilder::withTable('u_user')
+                    ->where('id', 12000 + $i)
+                    ->setData([
+                        'status'=> 2
+                    ])
+                    ->update()
+            );
+        }
+        $db->sqlBuilder($sqlBuilderEmpty)->execute();
+        $id = 12008;
+        $status = $db->sqlBuilder(
+            SqlBuilder::withTable('u_user')
+                ->where('id', $id)
+                ->fields('status')
+        )
+            ->getSingle();
+        $this->assertEquals(2, $status);
     }
 
     /**
@@ -154,13 +175,14 @@ class DbTest extends TestCase
     {
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('id', 'username')
-            ->whereIn('id', [12006, 12008, 12010])
-            ->setData([
-                'del_flag' => 1,
-            ]);
-        $db = Db::get('demo');
-        $db->sqlBuilder($sqlBuilder)
-            ->update();
+            ->whereIn('id', [12006, 12008, 12010]);
+        $db = Db::get('demo')->sqlBuilder($sqlBuilder);
+
+        $sqlBuilder->setData([
+            'del_flag' => 1,
+        ]);
+
+        $db->update();
 
         $rows = $db->getAll();
         $this->assertNotEmpty($rows);
@@ -233,10 +255,6 @@ class DbTest extends TestCase
             ->execute();
     }
 
-    /**
-     * @covers \Phpple\Mysql\Db::isWrite()
-     * @covers \Phpple\Mysql\Db::getAll()
-     */
     public function testMultiSql()
     {
         $sql = 'SELECT * FROM `phpple`.`u_user` WHERE (`id` = 12002)';

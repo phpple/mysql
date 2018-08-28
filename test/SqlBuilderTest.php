@@ -20,6 +20,62 @@ class SqlBuilderTest extends TestCase
     const DB_NAME = 'phpple';
     const TABLE_NAME = 'u_user';
 
+    /**
+     * @expectedException \DomainException
+     * @expectedExceptionMessageRegExp  #^sqlBuilder.operationNotDefine #
+     */
+    public function testOperationIllegal()
+    {
+        (new SqlBuilder())->operation('sdfsdf');
+    }
+
+    /**
+     * @expectedException DomainException
+     * @expectedExceptionMessageRegExp #^sqlBuilder.varNotImplemented #
+     */
+    public function testMethodNotExist()
+    {
+        $operation = 'foo';
+        Compiler::addTemplate($operation, 'hello {Hlsdfsdfsdf}}');
+        (new SqlBuilder())->operation($operation)->toString();
+    }
+
+    /**
+     * @expectedException UnexpectedValueException
+     * @expectedExceptionMessage sqlBuilder.dataEmpty
+     */
+    public function testValuesNotDefine()
+    {
+        $operation = 'bar';
+        Compiler::addTemplate($operation, 'TEST {VALUES}');
+        (new SqlBuilder())->operation($operation)->toString();
+    }
+
+    /**
+     * @expectedException InvalidArgumentException
+     * @expectedExceptionMessage sqlBuilder.dataNotAllowEmpty
+     */
+    public function testSetDataFailed()
+    {
+        (new SqlBuilder())->setData([]);
+    }
+
+    /**
+     * @expectedException \InvalidArgumentException
+     * @expectedExceptionMessage sqlBuilder.illealField
+     */
+    public function testFieldIllegal()
+    {
+        (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->setData([
+                1 => 'a'
+            ])
+            ->insert()
+            ->toString();
+    }
+
     public function testGet()
     {
         $sqlBuilder = new SqlBuilder();
@@ -255,9 +311,16 @@ class SqlBuilderTest extends TestCase
         ];
         $sqlBuilder = new SqlBuilder();
         $sqlBuilder->db(self::DB_NAME)
-            ->table(self::TABLE_NAME)
-            ->setData($data)
+            ->table(self::TABLE_NAME);
+        try {
+            $sqlBuilder->insert()->toString();
+        } catch (\UnexpectedValueException $ex) {
+            $this->assertEquals('sqlBuilder.dataEmpty', $ex->getMessage());
+        }
+
+        $sqlBuilder->setData($data)
             ->insert();
+
         $this->assertEquals(
             'INSERT INTO `phpple`.`u_user`(`id`, `username`, `password`, `avatar`, `sex`, `create_time`) VALUES(10001, 0x' .
             bin2hex($data['username']) . ', 0x' .
@@ -271,6 +334,50 @@ class SqlBuilderTest extends TestCase
         $this->assertContains('INSERT IGNORE INTO ', $sqlBuilder->toString());
     }
 
+    public function testInsertUpdate()
+    {
+        $data = [
+            'id' => 10000,
+            'username' => 'comdeng',
+            'password' => md5('test'),
+            'status' => 1,
+            'sex' => 2,
+            'view_num' => 0,
+            '@update_time' => 'CURRENT_TIMESTAMP()',
+        ];
+        $updates = [
+            'status' => null,
+            'sex' => null,
+            '@view_num' => '(view_num+1)',
+            'update_time' => null,
+        ];
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->setData($data);
+
+        try {
+            $sqlBuilder->onDuplicate([]);
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.updatesNotAllowEmpty', $ex->getMessage());
+        }
+
+        $sqlBuilder->onDuplicate($updates)
+            ->insertUpdate();
+        $this->assertContains(
+            ' ON DUPLICATE KEY UPDATE `status` = VALUES(`status`), `sex` = VALUES(`sex`), `view_num` = ' .
+            $updates['@view_num'] .
+            ', `update_time` = VALUES(`update_time`)',
+            $sqlBuilder->toString()
+        );
+
+        $sqlBuilder->onDuplicate(null);
+        $this->assertContains(
+            ' ON DUPLICATE KEY UPDATE `id` = VALUES(`id`), `username` = VALUES(`username`), `password` = VALUES(`password`), `status` = VALUES(`status`), `sex` = VALUES(`sex`), `view_num` = VALUES(`view_num`), `update_time` = CURRENT_TIMESTAMP()',
+            $sqlBuilder->toString()
+        );
+    }
+
     public function testUpdate()
     {
         $data = [
@@ -280,9 +387,16 @@ class SqlBuilderTest extends TestCase
         $sqlBuilder = new SqlBuilder();
         $sqlBuilder->db(self::DB_NAME)
             ->table(self::TABLE_NAME)
-            ->setData($data)
             ->where('id', 10000)
             ->update();
+
+        try {
+            $sqlBuilder->toString();
+        } catch (\UnexpectedValueException $ex) {
+            $this->assertEquals('sqlBuilder.dataEmpty', $ex->getMessage());
+        }
+
+        $sqlBuilder->setData($data);
         $this->assertEquals(
             'UPDATE `phpple`.`u_user` SET `email` = 0x' . bin2hex($data['email']) . ', `update_time` = ' . $data['@update_time'] . ' WHERE (`id` = 10000)',
             $sqlBuilder->toString()
@@ -325,7 +439,7 @@ class SqlBuilderTest extends TestCase
     {
         $data = [
             'username' => 'comdeng',
-            '@password' => "'".md5('test')."'",
+            '@password' => "'" . md5('test') . "'",
         ];
         $sqlBuilder = new SqlBuilder();
         $sqlBuilder->db(self::DB_NAME)
@@ -342,12 +456,26 @@ class SqlBuilderTest extends TestCase
         );
     }
 
+
     public function testUnsetWhere()
     {
         $sqlBuilder = new SqlBuilder();
         $sqlBuilder->where('status', 1)
             ->unsetWhere()
             ->where('id', 10000);
+
+        try {
+            $sqlBuilder->toString();
+        } catch (\UnexpectedValueException $ex) {
+            $this->assertEquals('sqlBuilder.dbNotDefined', $ex->getMessage());
+            $sqlBuilder->db(self::DB_NAME);
+        }
+        try {
+            $sqlBuilder->toString();
+        } catch (\UnexpectedValueException $ex) {
+            $this->assertEquals('sqlBuilder.tableNotDefined', $ex->getMessage());
+            $sqlBuilder->table(self::TABLE_NAME);
+        }
         $this->assertNotContains('status', $sqlBuilder->toString());
     }
 
@@ -358,6 +486,45 @@ class SqlBuilderTest extends TestCase
         $builder1->push($builder2)->db('demo');
 
         $this->assertContains('`demo`', $builder2->toString());
+    }
+
+    public function testEscapeVal()
+    {
+        $data = [
+            'key0' => 'str',
+            'key1' => 3,
+            'key2' => 0,
+            'key3' => 0.4,
+            'key4' => null,
+            'key5' => true,
+            'key6' => [1,true] // 有可能导致错误
+        ];
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->setData($data);
+        $sql = $sqlBuilder->insert()->toString();
+
+        $this->assertContains(
+            'VALUES(0x' . bin2hex($data['key0']) . ', 3, 0, 0.4, NULL, 1, 1, 1)',
+            $sql
+        );
+
+        try {
+            $sqlBuilder->setData([
+                'key1' => new \Reflection(),
+            ])->toString();
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.notSupportType', $ex->getMessage());
+        }
+
+        try {
+            $sqlBuilder->setData([
+                'key1' => [],
+            ])->toString();
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.emptyNotAllowd', $ex->getMessage());
+        }
     }
 
     public function testSplitTable()
@@ -431,5 +598,42 @@ class SqlBuilderTest extends TestCase
             'SELECT * FROM `phpple`.`u_user_92` u WHERE (`id` = ' . $id . ')',
             $sqlBuilder->toString()
         );
+    }
+
+    public function testFollow()
+    {
+        $sqlBuilder = SqlBuilder::none();
+
+        $sqls = [];
+        $num = 10;
+        for ($i = 0; $i < $num; $i++) {
+            $sqlBuilder->push((new SqlBuilder())
+                ->db(self::DB_NAME)
+                ->table(self::TABLE_NAME)
+                ->setData([
+                    'order_index' => $i + 1,
+                ])
+                ->where('id', 10000 + $i + 1)
+                ->update()
+            );
+            $sqls[] = 'UPDATE `phpple`.`u_user` SET `order_index` = ' . ($i + 1) . ' WHERE (`id` = ' . (10000 + $i + 1) . ')';
+        }
+        $this->assertEquals(
+            implode(SqlBuilder::SQL_JOIN_FLAG, $sqls),
+            $sqlBuilder->toString()
+        );
+
+        $total = 0;
+        foreach ($sqlBuilder->fetchFollows() as $follow) {
+            $total++;
+        }
+        $this->assertEquals($num, $total);
+
+        $sqlBuilder->unsetFollows();
+        $total = 0;
+        foreach ($sqlBuilder->fetchFollows() as $follow) {
+            $total++;
+        }
+        $this->assertEquals(0, $total);
     }
 }
