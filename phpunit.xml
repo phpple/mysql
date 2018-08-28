@@ -3,6 +3,16 @@
     <testsuites>
         <testsuite name="phpple's test">
             <directory>./test/</directory>
+            <exclude>./test/TestForUid.php</exclude>
         </testsuite>
     </testsuites>
+    <filter>
+        <whitelist processUncoveredFilesFromWhitelist="true">
+            <directory suffix=".php">./src</directory>
+        </whitelist>
+    </filter>
+
+    <logging>
+        <log type="coverage-html" target="./report" charset="UTF-8"/>
+    </logging>
 </phpunit>
