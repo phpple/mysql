@@ -1,21 +1,28 @@
 <?php
 /**
- *
+ * Db操作类
  * @author: ronnie
  * @since: 2018/8/27 15:47
  * @copyright: 2018@hunbasha.com
  * @filesource: Mysql.php
+ * @example
+ * ```php
+ * Db::get('demo')->sqlBuilder(
+ *   SqlBuilder::withTable('u_user')
+ *     ->where('id', 10000)
+ *     ->where('status', 1)
+ * )->getOne();
+ * ```
  */
 
 namespace Phpple\Mysql;
 
 use Phpple\Mysql\Sql\SqlBuilder;
-use PHPUnit\Framework\ExpectationFailedException;
 
 class Db
 {
     const MULTI_SQL_FLAG = ';';
-    const KEY_AFFECT_ROWS = 'affectr_rows';
+    const KEY_AFFECT_ROWS = 'affect_rows';
     const KEY_FIELDS = 'fields';
 
     /**
@@ -145,7 +152,7 @@ class Db
             }
             return false;
         }
-        return preg_match('#^(INSERT|UPDATE|DELETE|DROP|ALTER) #i', $sql) !== false;
+        return !!preg_match('#^(INSERT|UPDATE|DELETE|DROP|ALTER) #i', $sql);
     }
 
     /**
@@ -179,6 +186,10 @@ class Db
     public function fetchAll()
     {
         $sql = $this->sqlBuilder->toString();
+        $multi = strpos($sql, self::MULTI_SQL_FLAG) !== false;
+        if ($multi) {
+            throw new \UnexpectedValueException('db.fetchAllNotSupportMultiSql please use getAll');
+        }
         $rs = $this->realQuery($sql);
         while (($row = $rs->fetch_assoc())) {
             yield $row;
@@ -190,10 +201,23 @@ class Db
     /**
      * 获取全部记录
      * @return array
+     * 如果是多条sql，返回格式为：
+     * ```
+     * [
+     *   [
+     *     'affect_rows' => 2,
+     *     'fields' => [],
+     *   ]
+     * ]
+     * ```
      */
     public function getAll()
     {
         $sql = $this->sqlBuilder->select()->toString();
+        $multi = strpos($sql, self::MULTI_SQL_FLAG) !== false;
+        if ($multi) {
+            return $this->realQuery($sql);
+        }
         $rs = $this->realQuery($sql);
         $rows = $rs->fetch_all(MYSQLI_ASSOC);
         $rs->close();
@@ -303,13 +327,14 @@ class Db
     /**
      * 执行DDL操作
      * @return int 影响条数
+     * @throws \InvalidArgumentException db.ddlSqlRequired
      */
     public function execute()
     {
         $sql = $this->sqlBuilder->toString();
         $ret = $this->realQuery($sql, $mysqli);
         if ($ret !== true) {
-            throw new \InvalidArgumentException('sql is not DDL mode');
+            throw new \InvalidArgumentException('db.ddlSqlRequired');
         }
         return $mysqli->affected_rows;
     }

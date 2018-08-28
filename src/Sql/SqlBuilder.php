@@ -105,6 +105,10 @@ class SqlBuilder
     public function db(string $db)
     {
         $this->db = $db;
+        // 将追加的SqlBuilder的db都重置成一样的
+        if ($this->tail) {
+            $this->tail->db($db);
+        }
         return $this;
     }
 
@@ -262,6 +266,17 @@ class SqlBuilder
         }
         return implode(', ', $this->fields);
     }
+
+    /**
+     * 清空所有的where查询
+     * @return $this
+     */
+    public function unsetWhere()
+    {
+        $this->causes = [];
+        return $this;
+    }
+
 
     /**
      * IN查询

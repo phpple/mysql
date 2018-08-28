@@ -13,6 +13,7 @@ use Phpple\Mysql\Conf;
 use Phpple\Mysql\Db;
 use Phpple\Mysql\Sql\ISqlWhere;
 use Phpple\Mysql\Sql\SqlBuilder;
+use Phpple\Mysql\Sql\Template\Compiler;
 use PHPUnit\Framework\TestCase;
 
 class DbTest extends TestCase
@@ -35,25 +36,34 @@ class DbTest extends TestCase
         ]
     ];
 
-    public function testCount()
+    /**
+     * @before
+     */
+    public function initConfs()
     {
         Conf::init($this->confs);
+    }
 
-        $count = Db::get('demo')
-            ->sqlBuilder(
-                SqlBuilder::withTable('u_user')
-                    ->where('status', 0)
-            )
-            ->getCount();
+    public function testCount()
+    {
+        $sqlBuilder = SqlBuilder::withTable('u_user')
+            ->where('status', 0);
+        $db = Db::get('demo')->sqlBuilder($sqlBuilder);
+        $count = $db->getCount();
         $this->assertGreaterThan(0, $count);
+
+        // 测试count为0的情况
+        $sqlBuilder->unsetWhere()->where('status', 9999);
+        $count = $db->getCount();
+        $this->assertEquals(0, $count);
     }
 
     public function testSelect()
     {
-        Conf::init($this->confs);
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('id', 'username', 'city_id', 'email', 'phone')
-            ->where('id', 10000, ISqlWhere::COMPARE_GREATER_OR_EQUAL);
+            ->where('id', 10000, ISqlWhere::COMPARE_GREATER_OR_EQUAL)
+            ->orderBy('id');
         $db = Db::get('demo')->sqlBuilder($sqlBuilder);
         $rows = [];
         foreach ($db->fetchAll() as $row) {
@@ -65,15 +75,49 @@ class DbTest extends TestCase
         $this->assertNotEmpty($rows);
     }
 
+    public function testGetOne()
+    {
+        $id = 10000;
+        $sqlBuilder = SqlBuilder::withTable('u_user')
+            ->setData([
+                'id' => $id,
+                'username' => 'user' . $id,
+                'password' => 'password' . $id,
+            ])
+            ->operation(Compiler::INSERT_IGNORE);
+        $db = Db::get('demo')->sqlBuilder($sqlBuilder);
+        $db->execute();
+
+        $sqlBuilder->where('id', $id);
+        $one = $db->getOne();
+        $this->assertEquals($id, $one['id']);
+
+        $id = 223;
+        $sqlBuilder->unsetWhere()->where('id', $id);
+
+        $exist = $db->getExist();
+
+        $this->assertFalse($exist);
+
+        $one = $db->getOne();
+        $this->assertNull($one);
+    }
+
+    /**
+     * @covers \Phpple\Mysql\Db::insert()
+     * @covers \Phpple\Mysql\Db::getOne()
+     */
     public function testInserts()
     {
-        Conf::init($this->confs);
-
-        $sqlBuider = SqlBuilder::withTable('u_user')
-            ->insert();
+        $sqlBuider = SqlBuilder::withTable('u_user');
         $db = Db::get('demo')->sqlBuilder($sqlBuider);
+
+        // 先删除再创建
+        $sqlBuider->whereParams('id>=12000 and id<=12099');
+        $db->delete();
+        $sqlBuider->unsetWhere();
+
         for ($i = 0; $i < 100; $i++) {
-            echo $i . PHP_EOL;
             $sqlBuider->setData([
                 'id' => 12000 + $i,
                 'status' => 1,
@@ -81,8 +125,11 @@ class DbTest extends TestCase
                 'password' => md5('password' . $i),
                 'email' => 'ronnie' . $i . '@live.com',
             ]);
-            $db->execute();
+            $db->insert();
         }
+        $id = random_int(12000, 12099);
+        $sqlBuider->where('id', $id);
+        $this->assertNotEmpty($db->getOne());
     }
 
     /**
@@ -90,8 +137,6 @@ class DbTest extends TestCase
      */
     public function testRealDel()
     {
-        Conf::init($this->confs);
-
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->whereIn('id', [12000, 12001, 12003]);
         $db = Db::get('demo');
@@ -107,26 +152,22 @@ class DbTest extends TestCase
      */
     public function testLogicDel()
     {
-        Conf::init($this->confs);
-
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('id', 'username')
             ->whereIn('id', [12006, 12008, 12010])
             ->setData([
-                'status' => -1,
+                'del_flag' => 1,
             ]);
         $db = Db::get('demo');
         $db->sqlBuilder($sqlBuilder)
             ->update();
 
         $rows = $db->getAll();
-        var_dump($rows);
         $this->assertNotEmpty($rows);
     }
 
     public function testAutoInc()
     {
-        Conf::init($this->confs);
         $lastId = Db::get('demo')
             ->sqlBuilder(SqlBuilder::withTable('u_user')
                 ->setData([
@@ -136,7 +177,7 @@ class DbTest extends TestCase
                 ]))
             ->insertWithLastId();
         $this->assertNotEmpty($lastId);
-        echo 'LastInsertId:'.$lastId.PHP_EOL;
+        echo 'LastInsertId:' . $lastId . PHP_EOL;
     }
 
     /**
@@ -150,7 +191,6 @@ class DbTest extends TestCase
      */
     public function testIncrement()
     {
-        Conf::init($this->confs);
         $id = 12030;
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('view_num')
@@ -171,7 +211,47 @@ class DbTest extends TestCase
         // 重新获取view_num
         $newViewnum = $db->getSingle();
         echo 'after:' . $newViewnum . PHP_EOL;
-
         $this->assertEquals($viewNum + 1, $newViewnum);
+
+        // 测试getSingle返回null
+        $sqlBuilder->unsetWhere()->where('id', 3333);
+        $viewNum = $db->getSingle();
+        $this->assertNull($viewNum, $viewNum);
+    }
+
+    /**
+     * @expectedException InvalidArgumentException
+     * @expectedExceptionMessage db.ddlSqlRequired
+     */
+    public function testQueryForExecute()
+    {
+        Db::get('demo')
+            ->sqlBuilder(
+                SqlBuilder::withTable('u_user')
+                    ->where('id', 12001)
+            )
+            ->execute();
+    }
+
+    /**
+     * @covers \Phpple\Mysql\Db::isWrite()
+     * @covers \Phpple\Mysql\Db::getAll()
+     */
+    public function testMultiSql()
+    {
+        $sql = 'SELECT * FROM `phpple`.`u_user` WHERE (`id` = 12002)';
+        $useMaster = !!preg_match('#^(INSERT|UPDATE|DELETE|DROP|ALTER) #i', $sql);
+        $this->assertFalse($useMaster);
+
+        $sqlBuilder = SqlBuilder::withTable('u_user')->where('id', 12002);
+        $sqlBuilder2 = SqlBuilder::withTable('u_user')->operation(Compiler::DESC_TABLE);
+        $sqlBuilder->append($sqlBuilder2);
+
+        $db = Db::get('demo')->sqlBuilder($sqlBuilder);
+        $result = $db->getAll();
+
+        $this->assertEquals(2, count($result));
+        $this->assertArrayHasKey(Db::KEY_AFFECT_ROWS, $result[0]);
+        $this->assertArrayHasKey(Db::KEY_FIELDS, $result[0]);
     }
 }
