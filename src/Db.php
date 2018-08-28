@@ -293,12 +293,22 @@ class Db
     }
 
     /**
+     * 重复数据不予插入，忽略掉
+     * @return int
+     */
+    public function insertIgnore()
+    {
+        $this->sqlBuilder->insertIgnore();
+        return $this->execute();
+    }
+
+    /**
      * 插入数据，且有自增key
      * @return int 返回插入的ID
      */
     public function insertWithLastId()
     {
-        $this->sqlBuilder->append(SqlBuilder::lastInsertId())->insert();
+        $this->sqlBuilder->push(SqlBuilder::lastInsertId())->insert();
         $rows = $this->realQuery($this->sqlBuilder->toString(), $mysqli);
         return intval(array_shift($rows[1][self::KEY_FIELDS][0]));
     }
@@ -332,10 +342,18 @@ class Db
     public function execute()
     {
         $sql = $this->sqlBuilder->toString();
+        $multi = strpos($sql, self::MULTI_SQL_FLAG) !== false;
         $ret = $this->realQuery($sql, $mysqli);
-        if ($ret !== true) {
-            throw new \InvalidArgumentException('db.ddlSqlRequired');
+        if (!$multi) {
+            if ($ret !== true) {
+                throw new \InvalidArgumentException('db.ddlSqlRequired');
+            }
+            return $mysqli->affected_rows;
         }
-        return $mysqli->affected_rows;
+        $total = 0;
+        foreach ($ret as $row) {
+            $total += $row[self::KEY_AFFECT_ROWS];
+        }
+        return $total;
     }
 }

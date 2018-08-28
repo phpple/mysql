@@ -332,7 +332,7 @@ class SqlBuilderTest extends TestCase
             ->table(self::TABLE_NAME)
             ->setData($data)
             ->insert()
-            ->append(SqlBuilder::lastInsertId());
+            ->push(SqlBuilder::lastInsertId());
 
         $this->assertEquals(
             'INSERT INTO `phpple`.`u_user`(`username`, `password`) VALUES(0x' .
@@ -355,7 +355,7 @@ class SqlBuilderTest extends TestCase
     {
         $builder1 = SqlBuilder::withTable('u_user');
         $builder2 = SqlBuilder::withTable('u_user_info');
-        $builder1->append($builder2)->db('demo');
+        $builder1->push($builder2)->db('demo');
 
         $this->assertContains('`demo`', $builder2->toString());
     }

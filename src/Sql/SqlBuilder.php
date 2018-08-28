@@ -83,9 +83,9 @@ class SqlBuilder
 
 
     /**
-     * @var SqlBuilder
+     * @var SqlBuilder[] builder的跟随者
      */
-    private $tail = null;
+    private $follows = [];
 
     /**
      * SqlBuilder快速初始化
@@ -106,8 +106,8 @@ class SqlBuilder
     {
         $this->db = $db;
         // 将追加的SqlBuilder的db都重置成一样的
-        if ($this->tail) {
-            $this->tail->db($db);
+        foreach ($this->follows as $follow) {
+            $follow->db($db);
         }
         return $this;
     }
@@ -828,13 +828,34 @@ class SqlBuilder
      * @param SqlBuilder $builder
      * @return $this;
      */
-    public function append(SqlBuilder $builder)
+    public function push(SqlBuilder $builder)
     {
-        $this->tail = $builder;
+        $this->follows[] = $builder;
         if ($this->db) {
-            $this->tail->db($this->db);
+            $builder->db($this->db);
         }
         return $this;
+    }
+
+    /**
+     * 将follow清理掉
+     * @return $this
+     */
+    public function unsetFollows()
+    {
+        $this->follows = [];
+        return $this;
+    }
+
+    /**
+     * 取出所有的follow
+     * @return \Generator
+     */
+    public function fetchFollows()
+    {
+        foreach ($this->follows as $follow) {
+            yield $follow;
+        }
     }
 
     /**
@@ -844,8 +865,8 @@ class SqlBuilder
     public function toString()
     {
         $ret = Compiler::compile($this->operation, [$this, 'generateTplVar']);
-        if ($this->tail) {
-            $ret .= ';' . $this->tail->toString();
+        foreach ($this->follows as $follow) {
+            $ret .= ';' . $follow->toString();
         }
         return $ret;
     }

@@ -245,7 +245,7 @@ class DbTest extends TestCase
 
         $sqlBuilder = SqlBuilder::withTable('u_user')->where('id', 12002);
         $sqlBuilder2 = SqlBuilder::withTable('u_user')->operation(Compiler::DESC_TABLE);
-        $sqlBuilder->append($sqlBuilder2);
+        $sqlBuilder->push($sqlBuilder2);
 
         $db = Db::get('demo')->sqlBuilder($sqlBuilder);
         $result = $db->getAll();
