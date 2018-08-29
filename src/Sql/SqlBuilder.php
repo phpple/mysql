@@ -291,7 +291,6 @@ class SqlBuilder
         return $this;
     }
 
-
     /**
      * IN查询
      * @param string $field
@@ -300,11 +299,11 @@ class SqlBuilder
      */
     public function whereIn(string $field, array $items)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = sprintf(
             '(%s %s (%s))',
             $this->wrapperField($field),
-            ISqlWhere::RANGE_IN,
+            IExpression::PREDICATE_IN,
             $this->escapeVal($items)
         );
         return $this;
@@ -318,9 +317,9 @@ class SqlBuilder
      * @param bool $escape
      * @return $this
      */
-    public function where(string $field, $value, string $compare = ISqlWhere::COMPARE_EQUAL, bool $escape = true)
+    public function where(string $field, $value, string $compare = IExpression::COMPARISON_EQUAL, bool $escape = true)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = sprintf('(%s %s %s)', $this->wrapperField($field), $compare,
             $escape ? $this->escapeVal($value) : $value);
         return $this;
@@ -330,12 +329,15 @@ class SqlBuilder
      * 通过参数查询
      * @param string $cause 条件
      * @param mixed ...$params 参数
-     * @example ->whereParams('a=? and (b=?  or c=?)', 3, 4, 5)
+     * @example
+     * ```php
+     * ->whereParams('a=? and (b=?  or c=?)', 3, 4, 5)
+     * ```
      * @return $this
      */
     public function whereParams(string $cause, ...$params)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = $this->buildParamWhere($cause, $params);
 
         return $this;
@@ -343,11 +345,11 @@ class SqlBuilder
 
     private function buildParamWhere($cause, array $params)
     {
-        $num = substr_count($cause, ISqlWhere::SQL_PARAM_FLAG);
+        $num = substr_count($cause, IExpression::SQL_PARAM_FLAG);
         if ($num != count($params)) {
             throw new \InvalidArgumentException('sqlBuilder.invalidNumOfParams');
         }
-        $cause = str_replace(ISqlWhere::SQL_PARAM_FLAG, '%s', $cause);
+        $cause = str_replace(IExpression::SQL_PARAM_FLAG, '%s', $cause);
         $params = array_map([$this, 'escapeVal'], $params);
         array_unshift($params, $cause);
         return '(' . call_user_func_array('sprintf', $params) . ')';
@@ -372,13 +374,78 @@ class SqlBuilder
      */
     public function whereOr(array $causeA, array $causeB)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
 
         $sqlA = $this->buildParamWheres($causeA);
         $sqlB = $this->buildParamWheres($causeB);
 
-        $this->causes[] = "({$sqlA} " . ISqlWhere::LOGIC_OR . " {$sqlB})";
+        $this->causes[] = "({$sqlA} " . IExpression::EXPR_OR . " {$sqlB})";
 
+        return $this;
+    }
+
+    /**
+     * 使用LIKE查询
+     * @param string $field
+     * @param string $expression 表达式。如 %title_%
+     * @return $this
+     */
+    public function whereLike(string $field, string $expression)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_LIKE,
+            $this->escapeVal($expression)
+        );
+        return $this;
+    }
+
+    /**
+     * 使用BETWEEN查询
+     * @param string $field
+     * @param mixed $min
+     * @param mixed $max
+     * @example
+     * ```
+     * ->whereBetween('age', 20, 30)
+     * ```
+     * @return $this
+     */
+    public function whereBetween(string $field, $min, $max)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_BETWEEN,
+            $this->escapeVal($min),
+            IExpression::EXPR_AND,
+            $this->escapeVal($max)
+        );
+        return $this;
+    }
+
+    /**
+     * 使用REGEXP查询
+     * @param string $field
+     * @param string $regexp
+     * @example
+     * ```php
+     * ->whereRegexp('email', '^user[0-9]+$')
+     * ```
+     * @return $this
+     */
+    public function whereRegexp(string $field, string $regexp)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_REGEXP,
+            $this->escapeVal($regexp)
+        );
         return $this;
     }
 
@@ -404,7 +471,7 @@ class SqlBuilder
                 }
             }
         }
-        return '(' . implode(' ' . ISqlWhere::LOGIC_AND . ' ', $sqls) . ')';
+        return '(' . implode(' ' . IExpression::EXPR_AND . ' ', $sqls) . ')';
     }
 
     /**

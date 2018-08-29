@@ -11,7 +11,7 @@ namespace Phpple\Mysql\Test;
 
 use Phpple\Mysql\Conf;
 use Phpple\Mysql\Db;
-use Phpple\Mysql\Sql\ISqlWhere;
+use Phpple\Mysql\Sql\IExpression;
 use Phpple\Mysql\Sql\SqlBuilder;
 use Phpple\Mysql\Sql\Template\Compiler;
 use PHPUnit\Framework\TestCase;
@@ -62,7 +62,7 @@ class DbTest extends TestCase
     {
         $sqlBuilder = SqlBuilder::withTable('u_user')
             ->fields('id', 'username', 'city_id', 'email', 'phone')
-            ->where('id', 10000, ISqlWhere::COMPARE_GREATER_OR_EQUAL)
+            ->where('id', 10000, IExpression::COMPARISON_GREATER_OR_EQUAL)
             ->orderBy('id');
         $db = Db::get('demo')->sqlBuilder($sqlBuilder);
         $rows = [];

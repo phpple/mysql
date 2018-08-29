@@ -10,7 +10,7 @@
 namespace Phpple\Mysql\Test;
 
 use Phpple\Mysql\ISplit;
-use Phpple\Mysql\Sql\ISqlWhere;
+use Phpple\Mysql\Sql\IExpression;
 use Phpple\Mysql\Sql\SqlBuilder;
 use Phpple\Mysql\Sql\Template\Compiler;
 use PHPUnit\Framework\TestCase;
@@ -83,7 +83,7 @@ class SqlBuilderTest extends TestCase
             ->table(self::TABLE_NAME)
             ->fields('user_id', 'username', 'email')
             ->where('user_id', 234)
-            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
+            ->where('status', -1, IExpression::COMPARISON_NOT_EQUAL)
             ->orderBy('user_id')
             ->orderBy('username', false)
             ->limitOne()
@@ -427,7 +427,7 @@ class SqlBuilderTest extends TestCase
         $sqlBuilder->db(self::DB_NAME)
             ->table(self::TABLE_NAME)
             ->where('user_id', 4)
-            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
+            ->where('status', -1, IExpression::COMPARISON_NOT_EQUAL)
             ->delete();
         $this->assertEquals(
             'DELETE FROM `phpple`.`u_user` WHERE (`user_id` = 4) AND (`status` != -1)',
@@ -635,5 +635,34 @@ class SqlBuilderTest extends TestCase
             $total++;
         }
         $this->assertEquals(0, $total);
+    }
+
+    public function testWhereLike()
+    {
+        $like = 'user%';
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->whereLike('username', $like)
+            ->select();
+        $this->assertContains(
+            'WHERE (`username` LIKE 0x'.bin2hex($like).')',
+            $sqlBuilder->toString()
+        );
+
+        $sqlBuilder->unsetWhere()
+            ->whereBetween('view_num', 4, 5);
+        $this->assertContains(
+            'WHERE (`view_num` BETWEEN 4 AND 5)',
+            $sqlBuilder->toString()
+        );
+
+        $emailExp = '\@163.com$';
+        $sqlBuilder->unsetWhere()
+            ->whereRegexp('email', $emailExp);
+        $this->assertContains(
+            'WHERE (`email` REGEXP 0x'.bin2hex($emailExp).')',
+            $sqlBuilder->toString()
+        );
     }
 }
