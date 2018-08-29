@@ -47,7 +47,17 @@ class SqlBuilderTest extends TestCase
     public function testValuesNotDefine()
     {
         $operation = 'bar';
-        Compiler::addTemplate($operation, 'TEST {VALUES}');
+        Compiler::addTemplate($operation, 'TEST {VALUES} {BATCHVALUES}');
+        (new SqlBuilder())->operation($operation)->toString();
+    }
+    /**
+     * @expectedException UnexpectedValueException
+     * @expectedExceptionMessage sqlBuilder.dataEmpty
+     */
+    public function testBatchValuesNotDefine()
+    {
+        $operation = 'bar';
+        Compiler::addTemplate($operation, 'TEST {BATCHVALUES}');
         (new SqlBuilder())->operation($operation)->toString();
     }
 
@@ -497,7 +507,7 @@ class SqlBuilderTest extends TestCase
             'key3' => 0.4,
             'key4' => null,
             'key5' => true,
-            'key6' => [1,true] // 有可能导致错误
+            'key6' => [1, true] // 有可能导致错误
         ];
         $sqlBuilder = (new SqlBuilder())
             ->db(self::DB_NAME)
@@ -646,7 +656,7 @@ class SqlBuilderTest extends TestCase
             ->whereLike('username', $like)
             ->select();
         $this->assertContains(
-            'WHERE (`username` LIKE 0x'.bin2hex($like).')',
+            'WHERE (`username` LIKE 0x' . bin2hex($like) . ')',
             $sqlBuilder->toString()
         );
 
@@ -661,7 +671,57 @@ class SqlBuilderTest extends TestCase
         $sqlBuilder->unsetWhere()
             ->whereRegexp('email', $emailExp);
         $this->assertContains(
-            'WHERE (`email` REGEXP 0x'.bin2hex($emailExp).')',
+            'WHERE (`email` REGEXP 0x' . bin2hex($emailExp) . ')',
+            $sqlBuilder->toString()
+        );
+    }
+
+    public function testBatch()
+    {
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->operation(Compiler::INSERT_BATCH);
+
+        try {
+            $sqlBuilder->setBatchData([]);
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.dataNotAllowEmpty', $ex->getMessage());
+        }
+
+        $sqlBuilder->setBatchData([
+            [
+                'id' => 12333,
+                'username' => 'username12333',
+                'password' => sha1('passseor'),
+                '@create_time' => 'CURRENT_TIMESTAMP()',
+            ],
+            [
+                'id' => 12334,
+                'username' => 'username12334',
+                'password' => sha1('password12334'),
+                '@create_time' => 'CURRENT_TIMESTAMP()',
+            ]
+        ], ['id', 'username', '@create_time']);
+
+        $sql = $sqlBuilder->toString();
+        $this->assertContains('CURRENT_TIMESTAMP()', $sql);
+        $this->assertNotContains('`password`', $sql);
+
+        $sqlBuilder->operation(Compiler::INSERT_IGNORE_BATCH);
+        $ignoreSql = $sqlBuilder->toString();
+
+        $this->assertContains('INSERT IGNORE INTO', $ignoreSql);
+        $this->assertEquals(str_replace('INSERT IGNORE ', 'INSERT ', $ignoreSql), $sql);
+
+        $sqlBuilder->onDuplicate([
+            'id' => null,
+            'username' => null,
+            '@update_time' => 'CURRENT_TIMESTAMP()'
+        ])->operation(Compiler::INSERT_UPDATE_BATCH);
+
+        $this->assertContains(
+            'ON DUPLICATE KEY UPDATE `id` = VALUES(`id`), `username` = VALUES(`username`), `update_time` = CURRENT_TIMESTAMP()',
             $sqlBuilder->toString()
         );
     }

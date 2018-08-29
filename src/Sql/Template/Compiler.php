@@ -21,8 +21,11 @@ class Compiler
     const SHOW = 'show';
 
     const INSERT = 'insert';
+    const INSERT_BATCH = 'insertBatch';
     const INSERT_IGNORE = 'insertIgnore';
+    const INSERT_IGNORE_BATCH = 'insertIgnoreBatch';
     const INSERT_UPDATE = 'insertUpdate';
+    const INSERT_UPDATE_BATCH = 'insertUpdateBatch';
     const UPDATE = 'update';
     const UPDATE_CASE = 'updateCase';
     const DELETE = 'delete';
@@ -45,6 +48,9 @@ class Compiler
         self::INSERT => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
         self::INSERT_IGNORE => 'INSERT IGNORE INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES})',
         self::INSERT_UPDATE => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES({VALUES}) ON DUPLICATE KEY UPDATE {DUPUPDATES}',
+        self::INSERT_BATCH => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES{BATCHVALUES}',
+        self::INSERT_IGNORE_BATCH => 'INSERT IGNORE INTO {DB}.{TABLE}({KEYS}) VALUES{BATCHVALUES}',
+        self::INSERT_UPDATE_BATCH => 'INSERT INTO {DB}.{TABLE}({KEYS}) VALUES{BATCHVALUES} ON DUPLICATE KEY UPDATE {DUPUPDATES}',
         self::UPDATE => 'UPDATE {DB}.{TABLE} SET {UPDATES}{WHERE}',
         self::UPDATE_CASE => 'UPDATE {DB}.{TABLE} 
 SET {FIELD}=CASE {PRIKEY}

@@ -585,6 +585,23 @@ class SqlBuilder
     }
 
     /**
+     * 设置批量保存的数据
+     * @param mixed $datas
+     * @param null|array $fields
+     * @see SqlBuilder::setData()
+     * @return $this
+     */
+    public function setBatchData(array $datas, $fields = null)
+    {
+        if (empty($datas) || !isset($datas[0])) {
+            throw new \InvalidArgumentException('sqlBuilder.dataNotAllowEmpty');
+        }
+        $this->setData($datas[0], $fields);
+        $this->data = $datas;
+        return $this;
+    }
+
+    /**
      * 获取要更新的字段
      * @return string
      * @throws \UnexpectedValueException sqlBuilder.dataEmpty
@@ -624,6 +641,31 @@ class SqlBuilder
             }
         }
         return implode(', ', $values);
+    }
+
+    /**
+     * 获取批量插入的数据的sql
+     * @throws \UnexpectedValueException sqlBuilder.dataEmpty
+     */
+    public function getBatchvaluesSql()
+    {
+        if (empty($this->data) || !isset($this->data[0])) {
+            throw new \UnexpectedValueException('sqlBuilder.dataEmpty');
+        }
+        $batchValues = [];
+        foreach ($this->data as $row) {
+            $values = [];
+            foreach ($this->dataFields as $field) {
+                $value = $row[$field];
+                if ($field[0] == self::RAW_VALUE_FLAG) {
+                    $values[] = $value;
+                } else {
+                    $values[] = $this->escapeVal($row[$field]);
+                }
+            }
+            $batchValues[] = '(' . implode(',', $values) . ')';
+        }
+        return implode(',', $batchValues);
     }
 
     /**
