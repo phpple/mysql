@@ -7,7 +7,7 @@
  * @filesource: DbTest.php
  */
 
-namespace Phpple\Mysql\Test;
+namespace Phpple\Mysql\Tests;
 
 use Phpple\Mysql\Conf;
 use Phpple\Mysql\Db;

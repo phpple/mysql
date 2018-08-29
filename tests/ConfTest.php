@@ -7,7 +7,7 @@
  * @filesource: ConfTest.php
  */
 
-namespace Phpple\Mysql\Test;
+namespace Phpple\Mysql\Tests;
 
 use Phpple\Mysql\Conf;
 use PHPUnit\Framework\TestCase;

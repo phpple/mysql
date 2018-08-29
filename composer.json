@@ -20,7 +20,7 @@
   "autoload": {
     "psr-4": {
       "Phpple\\Mysql\\": "src/",
-      "Phpple\\Mysql\\Test\\": "test"
+      "PHpple\\Mysql\\Tests\\": "tests"
     }
   }
 }

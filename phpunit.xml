@@ -2,8 +2,7 @@
 <phpunit bootstrap="./vendor/autoload.php">
     <testsuites>
         <testsuite name="phpple's test">
-            <directory>./test/</directory>
-            <exclude>./test/TestForUid.php</exclude>
+            <directory>./tests/</directory>
         </testsuite>
     </testsuites>
     <filter>
