@@ -3,7 +3,7 @@ Phpple Mysql
 
 `Phpple Mysql`一个基于PHP语言的Mysql类库，具有使用简单、操作优雅、代码严谨、效率优先等诸多优点。
 
-[![Latest Stable Version](https://img.shields.io/packagist/v/phpunit/phpunit.svg?style=flat-square)](https://packagist.org/packages/phpple/mysql)
+[![Latest Stable Version](https://img.shields.io/packagist/v/phpple/mysql.svg?style=flat-square)](https://packagist.org/packages/phpple/mysql)
 [![Minimum PHP Version](https://img.shields.io/badge/php-%3E%3D%207.0-8892BF.svg?style=flat-square)](https://php.net/)
 [![Build Status](https://img.shields.io/travis/phpple/mysql/master.svg?style=flat-square)](https://travis-ci.org/phpple/mysql)
 [![codecov](https://codecov.io/gh/phpple/mysql/branch/master/graph/badge.svg)](https://codecov.io/gh/phpple/mysql)
