@@ -36,4 +36,9 @@ interface IExpression
     const PREDICATE_IN = 'IN';
     const PREDICATE_BETWEEN = 'BETWEEN';
     const PREDICATE_REGEXP = 'REGEXP';
+
+    const KEY_CASE = 'CASE';
+    const KEY_WHEN = 'WHEN';
+    const KEY_THEN = 'THEN';
+    const KEY_END = 'END';
 }

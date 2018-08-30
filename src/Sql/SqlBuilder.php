@@ -602,6 +602,86 @@ class SqlBuilder
     }
 
     /**
+     * 设置按CASE表达式保存的数据
+     * @param array $datas 格式如下：
+     * ```php
+     * [
+     *   $whenVal1 => $thenVal1,
+     *   $whenVal2 => $thenVal2,
+     * ]
+     * ```
+     * @param string $keyField $datas的key对应的字段用
+     * @param string $valField $datas的value对应的字段
+     * @see https://dev.mysql.com/doc/refman/5.6/en/case.html
+     * @example
+     * 比如：
+     * ```php
+     * // 更新排序数
+     * ->setCaseData(
+     *   [
+     *     100 => 1,
+     *     103 => 2,
+     *     102 => 3,
+     *   ],
+     *   'id',
+     *   'order_index'
+     * );
+     * ```
+     * 最后生成的sql为：
+     * ```sql
+     * SET `order_index` = CASE `id`
+     *   WHEN 100 THEN 1
+     *   WHEN 103 THEN 2
+     *   WHEN 102 THEN 3
+     * END CASE
+     * WHERE `id` in(100,103,102)
+     * ```
+     * @return $this
+     */
+    public function setCaseData(array $datas, string $keyField, string $valField)
+    {
+        // $datas中必须至少有一个元素
+        if (!count($datas)) {
+            throw new \InvalidArgumentException('sqlBuilder.datasMustContainOneItem');
+        }
+
+        // 设置好数据
+        $this->data = $datas;
+        $this->dataFields = [$keyField, $valField];
+
+        // 增加查询条件
+        $this->whereIn($keyField, array_keys($datas));
+        return $this;
+    }
+
+    /**
+     * 获取case更新的sql语句
+     * @return string
+     */
+    public function getCasesSql()
+    {
+        $sqls = [];
+        list($keyField, $valField) = $this->dataFields;
+        $sqls[] = sprintf(
+            '%s = %s %s',
+            $this->wrapperField($valField),
+            IExpression::KEY_CASE,
+            $this->wrapperField($keyField)
+        );
+        foreach ($this->data as $key => $val) {
+            $sqls[] = sprintf(
+                '  %s %s %s %s',
+                IExpression::KEY_WHEN,
+                $this->escapeVal($key),
+                IExpression::KEY_THEN,
+                $this->escapeVal($val)
+            );
+        }
+        $sqls[] = IExpression::KEY_END;
+        return implode(PHP_EOL, $sqls);
+    }
+
+    /**
      * 获取要更新的字段
      * @return string
      * @throws \UnexpectedValueException sqlBuilder.dataEmpty

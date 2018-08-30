@@ -50,6 +50,7 @@ class SqlBuilderTest extends TestCase
         Compiler::addTemplate($operation, 'TEST {VALUES} {BATCHVALUES}');
         (new SqlBuilder())->operation($operation)->toString();
     }
+
     /**
      * @expectedException UnexpectedValueException
      * @expectedExceptionMessage sqlBuilder.dataEmpty
@@ -724,5 +725,35 @@ class SqlBuilderTest extends TestCase
             'ON DUPLICATE KEY UPDATE `id` = VALUES(`id`), `username` = VALUES(`username`), `update_time` = CURRENT_TIMESTAMP()',
             $sqlBuilder->toString()
         );
+    }
+
+    /**
+     * 测试UpdateCase更新
+     */
+    public function testUpdateCase()
+    {
+        $sql = <<<SQL
+UPDATE `phpple`.`u_user` SET `view_num` = CASE `id`
+  WHEN 12010 THEN 1
+  WHEN 12022 THEN 2
+  WHEN 12011 THEN 3
+END WHERE (`id` IN (12010, 12022, 12011))
+SQL;
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->setCaseData([
+                12010 => 1,
+                12022 => 2,
+                12011 => 3,
+            ], 'id', 'view_num')
+            ->operation(Compiler::UPDATE_CASE);
+        $this->assertEquals($sql, $sqlBuilder->toString());
+
+        try {
+            $sqlBuilder->setCaseData([], 'id', 'order_index');
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.datasMustContainOneItem', $ex->getMessage());
+        }
     }
 }
