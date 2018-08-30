@@ -7,7 +7,7 @@
  * @filesource: CompilerTest.php
  */
 
-namespace Phpple\Mysql\Test;
+namespace Phpple\Mysql\Tests;
 
 use Phpple\Mysql\Sql\Template\Compiler;
 

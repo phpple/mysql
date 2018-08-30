@@ -291,7 +291,6 @@ class SqlBuilder
         return $this;
     }
 
-
     /**
      * IN查询
      * @param string $field
@@ -300,11 +299,11 @@ class SqlBuilder
      */
     public function whereIn(string $field, array $items)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = sprintf(
             '(%s %s (%s))',
             $this->wrapperField($field),
-            ISqlWhere::RANGE_IN,
+            IExpression::PREDICATE_IN,
             $this->escapeVal($items)
         );
         return $this;
@@ -318,9 +317,9 @@ class SqlBuilder
      * @param bool $escape
      * @return $this
      */
-    public function where(string $field, $value, string $compare = ISqlWhere::COMPARE_EQUAL, bool $escape = true)
+    public function where(string $field, $value, string $compare = IExpression::COMPARISON_EQUAL, bool $escape = true)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = sprintf('(%s %s %s)', $this->wrapperField($field), $compare,
             $escape ? $this->escapeVal($value) : $value);
         return $this;
@@ -330,12 +329,15 @@ class SqlBuilder
      * 通过参数查询
      * @param string $cause 条件
      * @param mixed ...$params 参数
-     * @example ->whereParams('a=? and (b=?  or c=?)', 3, 4, 5)
+     * @example
+     * ```php
+     * ->whereParams('a=? and (b=?  or c=?)', 3, 4, 5)
+     * ```
      * @return $this
      */
     public function whereParams(string $cause, ...$params)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
         $this->causes[] = $this->buildParamWhere($cause, $params);
 
         return $this;
@@ -343,11 +345,11 @@ class SqlBuilder
 
     private function buildParamWhere($cause, array $params)
     {
-        $num = substr_count($cause, ISqlWhere::SQL_PARAM_FLAG);
+        $num = substr_count($cause, IExpression::SQL_PARAM_FLAG);
         if ($num != count($params)) {
             throw new \InvalidArgumentException('sqlBuilder.invalidNumOfParams');
         }
-        $cause = str_replace(ISqlWhere::SQL_PARAM_FLAG, '%s', $cause);
+        $cause = str_replace(IExpression::SQL_PARAM_FLAG, '%s', $cause);
         $params = array_map([$this, 'escapeVal'], $params);
         array_unshift($params, $cause);
         return '(' . call_user_func_array('sprintf', $params) . ')';
@@ -372,13 +374,78 @@ class SqlBuilder
      */
     public function whereOr(array $causeA, array $causeB)
     {
-        $this->causes[] = ISqlWhere::LOGIC_AND;
+        $this->causes[] = IExpression::EXPR_AND;
 
         $sqlA = $this->buildParamWheres($causeA);
         $sqlB = $this->buildParamWheres($causeB);
 
-        $this->causes[] = "({$sqlA} " . ISqlWhere::LOGIC_OR . " {$sqlB})";
+        $this->causes[] = "({$sqlA} " . IExpression::EXPR_OR . " {$sqlB})";
 
+        return $this;
+    }
+
+    /**
+     * 使用LIKE查询
+     * @param string $field
+     * @param string $expression 表达式。如 %title_%
+     * @return $this
+     */
+    public function whereLike(string $field, string $expression)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_LIKE,
+            $this->escapeVal($expression)
+        );
+        return $this;
+    }
+
+    /**
+     * 使用BETWEEN查询
+     * @param string $field
+     * @param mixed $min
+     * @param mixed $max
+     * @example
+     * ```
+     * ->whereBetween('age', 20, 30)
+     * ```
+     * @return $this
+     */
+    public function whereBetween(string $field, $min, $max)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_BETWEEN,
+            $this->escapeVal($min),
+            IExpression::EXPR_AND,
+            $this->escapeVal($max)
+        );
+        return $this;
+    }
+
+    /**
+     * 使用REGEXP查询
+     * @param string $field
+     * @param string $regexp
+     * @example
+     * ```php
+     * ->whereRegexp('email', '^user[0-9]+$')
+     * ```
+     * @return $this
+     */
+    public function whereRegexp(string $field, string $regexp)
+    {
+        $this->causes[] = IExpression::EXPR_AND;
+        $this->causes[] = sprintf(
+            '(%s %s %s)',
+            $this->wrapperField($field),
+            IExpression::PREDICATE_REGEXP,
+            $this->escapeVal($regexp)
+        );
         return $this;
     }
 
@@ -404,7 +471,7 @@ class SqlBuilder
                 }
             }
         }
-        return '(' . implode(' ' . ISqlWhere::LOGIC_AND . ' ', $sqls) . ')';
+        return '(' . implode(' ' . IExpression::EXPR_AND . ' ', $sqls) . ')';
     }
 
     /**
@@ -518,6 +585,103 @@ class SqlBuilder
     }
 
     /**
+     * 设置批量保存的数据
+     * @param mixed $datas
+     * @param null|array $fields
+     * @see SqlBuilder::setData()
+     * @return $this
+     */
+    public function setBatchData(array $datas, $fields = null)
+    {
+        if (empty($datas) || !isset($datas[0])) {
+            throw new \InvalidArgumentException('sqlBuilder.dataNotAllowEmpty');
+        }
+        $this->setData($datas[0], $fields);
+        $this->data = $datas;
+        return $this;
+    }
+
+    /**
+     * 设置按CASE表达式保存的数据
+     * @param array $datas 格式如下：
+     * ```php
+     * [
+     *   $whenVal1 => $thenVal1,
+     *   $whenVal2 => $thenVal2,
+     * ]
+     * ```
+     * @param string $keyField $datas的key对应的字段用
+     * @param string $valField $datas的value对应的字段
+     * @see https://dev.mysql.com/doc/refman/5.6/en/case.html
+     * @example
+     * 比如：
+     * ```php
+     * // 更新排序数
+     * ->setCaseData(
+     *   [
+     *     100 => 1,
+     *     103 => 2,
+     *     102 => 3,
+     *   ],
+     *   'id',
+     *   'order_index'
+     * );
+     * ```
+     * 最后生成的sql为：
+     * ```sql
+     * SET `order_index` = CASE `id`
+     *   WHEN 100 THEN 1
+     *   WHEN 103 THEN 2
+     *   WHEN 102 THEN 3
+     * END CASE
+     * WHERE `id` in(100,103,102)
+     * ```
+     * @return $this
+     */
+    public function setCaseData(array $datas, string $keyField, string $valField)
+    {
+        // $datas中必须至少有一个元素
+        if (!count($datas)) {
+            throw new \InvalidArgumentException('sqlBuilder.datasMustContainOneItem');
+        }
+
+        // 设置好数据
+        $this->data = $datas;
+        $this->dataFields = [$keyField, $valField];
+
+        // 增加查询条件
+        $this->whereIn($keyField, array_keys($datas));
+        return $this;
+    }
+
+    /**
+     * 获取case更新的sql语句
+     * @return string
+     */
+    public function getCasesSql()
+    {
+        $sqls = [];
+        list($keyField, $valField) = $this->dataFields;
+        $sqls[] = sprintf(
+            '%s = %s %s',
+            $this->wrapperField($valField),
+            IExpression::KEY_CASE,
+            $this->wrapperField($keyField)
+        );
+        foreach ($this->data as $key => $val) {
+            $sqls[] = sprintf(
+                '  %s %s %s %s',
+                IExpression::KEY_WHEN,
+                $this->escapeVal($key),
+                IExpression::KEY_THEN,
+                $this->escapeVal($val)
+            );
+        }
+        $sqls[] = IExpression::KEY_END;
+        return implode(PHP_EOL, $sqls);
+    }
+
+    /**
      * 获取要更新的字段
      * @return string
      * @throws \UnexpectedValueException sqlBuilder.dataEmpty
@@ -557,6 +721,31 @@ class SqlBuilder
             }
         }
         return implode(', ', $values);
+    }
+
+    /**
+     * 获取批量插入的数据的sql
+     * @throws \UnexpectedValueException sqlBuilder.dataEmpty
+     */
+    public function getBatchvaluesSql()
+    {
+        if (empty($this->data) || !isset($this->data[0])) {
+            throw new \UnexpectedValueException('sqlBuilder.dataEmpty');
+        }
+        $batchValues = [];
+        foreach ($this->data as $row) {
+            $values = [];
+            foreach ($this->dataFields as $field) {
+                $value = $row[$field];
+                if ($field[0] == self::RAW_VALUE_FLAG) {
+                    $values[] = $value;
+                } else {
+                    $values[] = $this->escapeVal($row[$field]);
+                }
+            }
+            $batchValues[] = '(' . implode(',', $values) . ')';
+        }
+        return implode(',', $batchValues);
     }
 
     /**

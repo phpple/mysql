@@ -7,10 +7,10 @@
  * @filesource: SqlBuilderTest.php
  */
 
-namespace Phpple\Mysql\Test;
+namespace Phpple\Mysql\Tests;
 
 use Phpple\Mysql\ISplit;
-use Phpple\Mysql\Sql\ISqlWhere;
+use Phpple\Mysql\Sql\IExpression;
 use Phpple\Mysql\Sql\SqlBuilder;
 use Phpple\Mysql\Sql\Template\Compiler;
 use PHPUnit\Framework\TestCase;
@@ -47,7 +47,18 @@ class SqlBuilderTest extends TestCase
     public function testValuesNotDefine()
     {
         $operation = 'bar';
-        Compiler::addTemplate($operation, 'TEST {VALUES}');
+        Compiler::addTemplate($operation, 'TEST {VALUES} {BATCHVALUES}');
+        (new SqlBuilder())->operation($operation)->toString();
+    }
+
+    /**
+     * @expectedException UnexpectedValueException
+     * @expectedExceptionMessage sqlBuilder.dataEmpty
+     */
+    public function testBatchValuesNotDefine()
+    {
+        $operation = 'bar';
+        Compiler::addTemplate($operation, 'TEST {BATCHVALUES}');
         (new SqlBuilder())->operation($operation)->toString();
     }
 
@@ -83,7 +94,7 @@ class SqlBuilderTest extends TestCase
             ->table(self::TABLE_NAME)
             ->fields('user_id', 'username', 'email')
             ->where('user_id', 234)
-            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
+            ->where('status', -1, IExpression::COMPARISON_NOT_EQUAL)
             ->orderBy('user_id')
             ->orderBy('username', false)
             ->limitOne()
@@ -427,7 +438,7 @@ class SqlBuilderTest extends TestCase
         $sqlBuilder->db(self::DB_NAME)
             ->table(self::TABLE_NAME)
             ->where('user_id', 4)
-            ->where('status', -1, ISqlWhere::COMPARE_NOT_EQUAL)
+            ->where('status', -1, IExpression::COMPARISON_NOT_EQUAL)
             ->delete();
         $this->assertEquals(
             'DELETE FROM `phpple`.`u_user` WHERE (`user_id` = 4) AND (`status` != -1)',
@@ -497,7 +508,7 @@ class SqlBuilderTest extends TestCase
             'key3' => 0.4,
             'key4' => null,
             'key5' => true,
-            'key6' => [1,true] // 有可能导致错误
+            'key6' => [1, true] // 有可能导致错误
         ];
         $sqlBuilder = (new SqlBuilder())
             ->db(self::DB_NAME)
@@ -635,5 +646,114 @@ class SqlBuilderTest extends TestCase
             $total++;
         }
         $this->assertEquals(0, $total);
+    }
+
+    public function testWhereLike()
+    {
+        $like = 'user%';
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->whereLike('username', $like)
+            ->select();
+        $this->assertContains(
+            'WHERE (`username` LIKE 0x' . bin2hex($like) . ')',
+            $sqlBuilder->toString()
+        );
+
+        $sqlBuilder->unsetWhere()
+            ->whereBetween('view_num', 4, 5);
+        $this->assertContains(
+            'WHERE (`view_num` BETWEEN 4 AND 5)',
+            $sqlBuilder->toString()
+        );
+
+        $emailExp = '\@163.com$';
+        $sqlBuilder->unsetWhere()
+            ->whereRegexp('email', $emailExp);
+        $this->assertContains(
+            'WHERE (`email` REGEXP 0x' . bin2hex($emailExp) . ')',
+            $sqlBuilder->toString()
+        );
+    }
+
+    public function testBatch()
+    {
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->operation(Compiler::INSERT_BATCH);
+
+        try {
+            $sqlBuilder->setBatchData([]);
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.dataNotAllowEmpty', $ex->getMessage());
+        }
+
+        $sqlBuilder->setBatchData([
+            [
+                'id' => 12333,
+                'username' => 'username12333',
+                'password' => sha1('passseor'),
+                '@create_time' => 'CURRENT_TIMESTAMP()',
+            ],
+            [
+                'id' => 12334,
+                'username' => 'username12334',
+                'password' => sha1('password12334'),
+                '@create_time' => 'CURRENT_TIMESTAMP()',
+            ]
+        ], ['id', 'username', '@create_time']);
+
+        $sql = $sqlBuilder->toString();
+        $this->assertContains('CURRENT_TIMESTAMP()', $sql);
+        $this->assertNotContains('`password`', $sql);
+
+        $sqlBuilder->operation(Compiler::INSERT_IGNORE_BATCH);
+        $ignoreSql = $sqlBuilder->toString();
+
+        $this->assertContains('INSERT IGNORE INTO', $ignoreSql);
+        $this->assertEquals(str_replace('INSERT IGNORE ', 'INSERT ', $ignoreSql), $sql);
+
+        $sqlBuilder->onDuplicate([
+            'id' => null,
+            'username' => null,
+            '@update_time' => 'CURRENT_TIMESTAMP()'
+        ])->operation(Compiler::INSERT_UPDATE_BATCH);
+
+        $this->assertContains(
+            'ON DUPLICATE KEY UPDATE `id` = VALUES(`id`), `username` = VALUES(`username`), `update_time` = CURRENT_TIMESTAMP()',
+            $sqlBuilder->toString()
+        );
+    }
+
+    /**
+     * 测试UpdateCase更新
+     */
+    public function testUpdateCase()
+    {
+        $sql = <<<SQL
+UPDATE `phpple`.`u_user` SET `view_num` = CASE `id`
+  WHEN 12010 THEN 1
+  WHEN 12022 THEN 2
+  WHEN 12011 THEN 3
+END WHERE (`id` IN (12010, 12022, 12011))
+SQL;
+        $sqlBuilder = (new SqlBuilder())
+            ->db(self::DB_NAME)
+            ->table(self::TABLE_NAME)
+            ->setCaseData([
+                12010 => 1,
+                12022 => 2,
+                12011 => 3,
+            ], 'id', 'view_num')
+            ->operation(Compiler::UPDATE_CASE);
+        $this->assertEquals($sql, $sqlBuilder->toString());
+
+        try {
+            $sqlBuilder->setCaseData([], 'id', 'order_index');
+        } catch (\InvalidArgumentException $ex) {
+            $this->assertEquals('sqlBuilder.datasMustContainOneItem', $ex->getMessage());
+        }
     }
 }
