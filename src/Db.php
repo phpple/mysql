@@ -278,7 +278,7 @@ class Db
         $rs = $this->realQuery($sql);
         $row = $rs->fetch_row();
         $rs->close();
-        return $row[0] == 1;
+        return $row ? $row[0] == 1 : false;
     }
 
     /**

@@ -511,6 +511,11 @@ class SqlBuilder
             }
             $this->data = $body;
         } else {
+            foreach ($data as $field => $value) {
+                if (!is_string($field)) {
+                    throw new \InvalidArgumentException('sqlBuilder.illealField');
+                }
+            }
             $this->data = $data;
             $this->dataFields = array_keys($data);
         }
